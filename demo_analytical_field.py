@@ -21,6 +21,12 @@ except ImportError:
     sys.path.insert(0, str(brain_core_path))
     from brain_core.global_state import GlobalState
 
+# 현재 디렉토리를 경로에 추가
+import sys
+from pathlib import Path
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
+
 from potential_field_engine import PotentialFieldEngine
 from gravity_field import GravityField
 
