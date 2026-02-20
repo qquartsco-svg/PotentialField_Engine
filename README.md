@@ -121,6 +121,22 @@ cd PotentialField_Engine
 pip install numpy matplotlib
 ```
 
+### ⚠️ 중요: GlobalState 규약
+
+**PotentialFieldEngine은 다음 규약을 요구합니다:**
+
+```
+GlobalState.state_vector MUST be 2N dimensional:
+- First N elements: position [x1, x2, ..., xN]
+- Last N elements: velocity [v1, v2, ..., vN]
+```
+
+**예시**:
+- 2D: `state_vector = [x1, x2, v1, v2]` (길이 4)
+- 3D: `state_vector = [x1, x2, x3, v1, v2, v3]` (길이 6)
+
+**홀수 길이 입력 시**: `ValueError` 발생
+
 ### 기본 사용
 
 ```python

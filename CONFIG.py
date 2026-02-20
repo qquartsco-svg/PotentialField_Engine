@@ -23,4 +23,6 @@ DEFAULT_Y_RANGE = (-5.0, 5.0)  # 기본 y 범위
 
 # 로깅
 DEFAULT_ENABLE_LOGGING = True  # 기본 로깅 활성화 여부
+# 참고: production 모드에서는 False로 설정 권장
+# BrainCore 실행 모드와 연동하여 사용
 

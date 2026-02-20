@@ -2,6 +2,14 @@
 
 독립 모듈: 퍼텐셜 필드 엔진
 
+⚠️ 중요: GlobalState 규약
+
+GlobalState.state_vector MUST be 2N dimensional:
+- First N elements: position [x1, x2, ..., xN]
+- Last N elements: velocity [v1, v2, ..., vN]
+
+홀수 길이 입력 시 ValueError 발생.
+
 은유 → 실제 코드 매핑:
 - 태양계 은유 → 중력 퍼텐셜 V_gravity(x) = -G * M / ||x - x_center||
 - 우물 은유 → Hopfield 에너지 E(x) = -(1/2) * Σ_ij w_ij x_i x_j - Σ_i b_i x_i
