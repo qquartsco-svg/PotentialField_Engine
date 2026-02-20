@@ -11,20 +11,18 @@
 ### 1. grid_analyzer.py ✅
 
 **compute_divergence()**:
-```python
-# 216-217줄
-dx = (x_max - x_min) / (self.grid_size[0] - 1)  # ✅ grid_size[0] = N_x
-dy = (y_max - y_min) / (self.grid_size[1] - 1)  # ✅ grid_size[1] = N_y
-```
+- `dx = (x_max - x_min) / (self.grid_size[0] - 1)` (grid_size[0] = N_x)
+- `dy = (y_max - y_min) / (self.grid_size[1] - 1)` (grid_size[1] = N_y)
+- `dgx_dx = np.gradient(gx_map, axis=0) / dx` (axis=0 = x 방향)
+- `dgy_dy = np.gradient(gy_map, axis=1) / dy` (axis=1 = y 방향)
 
 **compute_curl()**:
-```python
-# 260-261줄
-dx = (x_max - x_min) / (self.grid_size[0] - 1)  # ✅ grid_size[0] = N_x
-dy = (y_max - y_min) / (self.grid_size[1] - 1)  # ✅ grid_size[1] = N_y
-```
+- `dx = (x_max - x_min) / (self.grid_size[0] - 1)` (grid_size[0] = N_x)
+- `dy = (y_max - y_min) / (self.grid_size[1] - 1)` (grid_size[1] = N_y)
+- `dgy_dx = np.gradient(gy_map, axis=0) / dx` (axis=0 = x 방향)
+- `dgx_dy = np.gradient(gx_map, axis=1) / dy` (axis=1 = y 방향)
 
-**결론**: ✅ 축/간격 버그 수정 완료
+**결론**: ✅ indexing='ij' 규약에 맞게 축/간격 계산 정확
 
 ---
 
