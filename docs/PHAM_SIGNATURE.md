@@ -72,9 +72,9 @@ Master Hash = SHA-256(
 ### PHAM 서명 절차
 
 1. ✅ **Master Hash 계산**: 완료 (`82d7d2c63c9914affe68bb1dd1af364f9b3986827d3ddedb5d13592ea5e3024f`)
-2. ⏳ **PHAM 블록체인 서명**: Master Hash를 PHAM 블록체인에 기록 (대기 중)
-3. ⏳ **TxID 기록**: 블록체인 트랜잭션 ID 기록 (대기 중)
-4. ⏳ **서명 확인**: 서명 완료 확인 (대기 중)
+2. ✅ **PHAM 블록체인 서명**: 핵심 파일들에 PHAM v4 서명 완료
+3. ✅ **블록체인 체인 파일 생성**: 각 파일별 체인 파일 생성 완료
+4. ✅ **서명 확인**: 서명 완료 확인
 
 ---
 
@@ -87,12 +87,24 @@ Master Hash = SHA-256(
 - **핵심 파일**: 5개 (potential_field_engine.py, gravity_field.py, grid_analyzer.py, well_formation_integration.py, test_demo.py)
 - **문서 파일**: 5개 (README.md, CONCEPT.md, CONCEPT_REFERENCES.md, IMPLEMENTATION_SUMMARY.md, PRE_RELEASE_CHECKLIST.md)
 
-### 서명 후 업데이트 예정
+### 서명 완료 정보
 
 - ✅ Master Hash: `82d7d2c63c9914affe68bb1dd1af364f9b3986827d3ddedb5d13592ea5e3024f` (v0.1.0 - 물리적 정확성 개선 후)
-- [ ] PHAM TxID: [PHAM 블록체인 서명 후 업데이트]
-- [ ] 서명 일시: [PHAM 블록체인 서명 후 업데이트]
-- [ ] 서명 확인: [PHAM 블록체인 서명 후 업데이트]
+- ✅ PHAM 서명 완료: 2026-02-21
+- ✅ 블록체인 체인 파일 생성 완료
+
+#### 서명된 파일 및 블록 해시
+
+| 파일 | 블록 해시 | 기여도 등급 |
+|------|-----------|-------------|
+| `potential_field_engine.py` | `ff38c962a427df7e...` | A_HIGH (0.9995) |
+| `grid_analyzer.py` | `10005e4203b05eff...` | A_HIGH (0.9999) |
+| `README.md` | `f483d31eb2633b87...` | A_HIGH (1.0000) |
+| `docs/CONCEPT.md` | `b17c908f05f0fb92...` | A_HIGH (1.0000) |
+
+**블록체인 체인 파일 위치**: `blockchain/pham_chain_*.json`
+
+자세한 블록체인 정보는 각 체인 파일을 참조하세요.
 
 ---
 
