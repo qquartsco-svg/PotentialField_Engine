@@ -36,7 +36,11 @@ from typing import Callable, Dict, Any, Optional
 import logging
 
 # CONFIG: 모든 하드코딩된 상수는 여기서만 정의
-from .CONFIG import EPSILON, DT, DEFAULT_ENABLE_LOGGING
+try:
+    from .CONFIG import EPSILON, DT, DEFAULT_ENABLE_LOGGING
+except ImportError:
+    # 독립 실행 시 fallback
+    from CONFIG import EPSILON, DT, DEFAULT_ENABLE_LOGGING
 
 # 독립 모듈: BrainCore의 GlobalState와 SelfOrganizingEngine을 import
 # BrainCore가 설치되어 있어야 함

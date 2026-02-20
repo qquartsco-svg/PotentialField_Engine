@@ -34,7 +34,11 @@ from typing import Callable, Tuple, Dict, Any, Optional
 import logging
 
 # CONFIG: 모든 하드코딩된 상수는 여기서만 정의
-from .CONFIG import EPSILON, DEFAULT_GRID_SIZE, DEFAULT_X_RANGE, DEFAULT_Y_RANGE, DEFAULT_ENABLE_LOGGING
+try:
+    from .CONFIG import EPSILON, DEFAULT_GRID_SIZE, DEFAULT_X_RANGE, DEFAULT_Y_RANGE, DEFAULT_ENABLE_LOGGING
+except ImportError:
+    # 독립 실행 시 fallback
+    from CONFIG import EPSILON, DEFAULT_GRID_SIZE, DEFAULT_X_RANGE, DEFAULT_Y_RANGE, DEFAULT_ENABLE_LOGGING
 
 # matplotlib은 선택적 의존성 (시각화가 필요한 경우만)
 try:

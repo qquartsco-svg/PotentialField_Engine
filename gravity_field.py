@@ -27,7 +27,11 @@ from typing import Callable, List, Tuple, Optional
 import logging
 
 # CONFIG: 모든 하드코딩된 상수는 여기서만 정의
-from .CONFIG import GRAVITY_CONSTANT, SOFTENING, DEFAULT_ENABLE_LOGGING
+try:
+    from .CONFIG import GRAVITY_CONSTANT, SOFTENING, DEFAULT_ENABLE_LOGGING
+except ImportError:
+    # 독립 실행 시 fallback
+    from CONFIG import GRAVITY_CONSTANT, SOFTENING, DEFAULT_ENABLE_LOGGING
 
 
 class GravityField:
