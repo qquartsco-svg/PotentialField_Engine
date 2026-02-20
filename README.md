@@ -141,6 +141,7 @@ GlobalState.state_vector MUST be 2N dimensional:
 
 ```python
 # 방법 1: 패키지로 설치/import (권장)
+# 이 모듈은 상대 import를 사용하므로 패키지로 설치하거나 PYTHONPATH에 추가해야 합니다.
 # pip install -e . 또는 PYTHONPATH에 추가 후
 from potential_field_engine import PotentialFieldEngine
 from gravity_field import create_gravity_potential
