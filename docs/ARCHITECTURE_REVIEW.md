@@ -201,7 +201,7 @@ r = sqrt(|x - x_i|^2 + epsilon^2)
 
 ### 남은 작업 ⚠️
 
-1. ⚠️ **state_vector 규약 명문화** (문서에 명시)
+1. ✅ **state_vector 규약 명문화** (완료 - README.md, __init__.py에 명시됨)
 2. ⚠️ **로깅 전략 개선** (BrainCore 모드 연동)
 3. ⚠️ **Plummer softening** (선택적, 천체물리 수준 필요 시)
 
