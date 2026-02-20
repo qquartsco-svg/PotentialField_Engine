@@ -264,6 +264,9 @@ class GridAnalyzer:
         Returns:
             분석 결과 딕셔너리
         """
+        # CONFIG에서 기본값 사용 (하드코딩 금지)
+        epsilon = epsilon if epsilon is not None else EPSILON
+        
         # 퍼텐셜 맵
         V_map = self.compute_potential_map(potential_func)
         
