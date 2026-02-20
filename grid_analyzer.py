@@ -1,32 +1,34 @@
 """Grid Analyzer
 
-상태공간을 그리드로 펼쳐 퍼텐셜 필드와 중력 왜곡을 분석합니다.
-
-은유 → 실제 코드 매핑:
-- 난류 은유 → 발산/회전 계산 (왜곡 탐지)
-- 상태공간 그리드 → 퍼텐셜 맵, 필드 맵 계산
+상태공간을 그리드로 펼쳐 퍼텐셜 필드와 벡터장 구조를 분석합니다.
 
 기능:
 - 그리드 생성
 - 퍼텐셜 맵 계산
 - 필드 맵 계산
-- 발산/회전 계산 (왜곡 탐지)
+- 발산/회전 계산 (벡터장 구조 분석)
 - 시각화
 
 수식:
 - 발산: ∇·g = ∂g_x/∂x + ∂g_y/∂y
 - 회전: ∇×g = ∂g_y/∂x - ∂g_x/∂y (2D)
 
+물리적 의미:
+- 발산: 소스/싱크 구조 탐지 (플럭스 구조)
+- 회전: 비보존 성분 탐지 (비퍼텐셜 성분)
+
+참고: 이 모듈은 정적 벡터장 분석 도구입니다. 시간 의존성, Navier-Stokes 방정식, 난류 시뮬레이션은 포함하지 않습니다.
+
 개념 및 논문 출처:
-- 발산 (Divergence): Vector calculus (Gauss's theorem), Fluid dynamics
+- 발산 (Divergence): Vector calculus (Gauss's theorem), Field theory
 - 회전 (Curl): Vector calculus (Stokes' theorem), Electromagnetism
-- 왜곡 탐지: Chaos theory, Nonlinear dynamics
+- 벡터장 분석: Vector calculus, Field theory
 - 그리드 분석: Numerical methods, Finite difference method
 
 참고 문헌:
 - Vector calculus: Arfken, G. B., Weber, H. J., & Harris, F. E. (2013). "Mathematical Methods for Physicists" (7th ed.)
 - Numerical methods: Press, W. H., Teukolsky, S. A., Vetterling, W. T., & Flannery, B. P. (2007). "Numerical Recipes" (3rd ed.)
-- Fluid dynamics: Batchelor, G. K. (2000). "An Introduction to Fluid Dynamics"
+- Field theory: Jackson, J. D. (1999). "Classical Electrodynamics" (3rd ed.)
 """
 
 import numpy as np
@@ -53,13 +55,13 @@ except ImportError:
 class GridAnalyzer:
     """그리드 분석기
     
-    역할: 상태공간을 그리드로 펼쳐 퍼텐셜 필드 분석
+    역할: 상태공간을 그리드로 펼쳐 퍼텐셜 필드 및 벡터장 구조 분석
     
     기능:
     - 그리드 생성
     - 퍼텐셜 맵 계산
     - 필드 맵 계산
-    - 발산/회전 계산 (왜곡 탐지)
+    - 발산/회전 계산 (벡터장 구조 분석)
     """
     
     def __init__(
@@ -111,6 +113,68 @@ class GridAnalyzer:
         x_grid, y_grid = np.meshgrid(x, y, indexing='ij')
         
         return x_grid, y_grid
+    
+    def _central_difference(
+        self,
+        f: np.ndarray,
+        axis: int,
+        dx: float = None,
+        dy: float = None,
+    ) -> np.ndarray:
+        """중심차분 계산 (일관된 수치 미분 scheme)
+        
+        수식:
+        - 내부 점: (f[i+1] - f[i-1]) / (2*dx)
+        - 첫 번째 점: (f[1] - f[0]) / dx (전진 차분)
+        - 마지막 점: (f[N-1] - f[N-2]) / dx (후진 차분)
+        
+        Args:
+            f: 미분할 배열
+            axis: 미분 방향 (0: x 방향, 1: y 방향)
+            dx: x 방향 간격 (axis=0일 때 사용)
+            dy: y 방향 간격 (axis=1일 때 사용)
+            
+        Returns:
+            미분 결과 배열
+        """
+        if axis == 0:
+            # x 방향 미분 (axis=0)
+            h = dx
+            df = np.zeros_like(f)
+            N = f.shape[0]
+            
+            # 내부 점: 중심차분
+            if N > 2:
+                df[1:N-1, :] = (f[2:N, :] - f[0:N-2, :]) / (2 * h)
+            
+            # 경계 점: 전진/후진 차분
+            if N > 1:
+                df[0, :] = (f[1, :] - f[0, :]) / h  # 첫 번째 점: 전진 차분
+                df[N-1, :] = (f[N-1, :] - f[N-2, :]) / h  # 마지막 점: 후진 차분
+            elif N == 1:
+                df[0, :] = 0.0  # 단일 점: 미분 불가
+            
+        elif axis == 1:
+            # y 방향 미분 (axis=1)
+            h = dy
+            df = np.zeros_like(f)
+            N = f.shape[1]
+            
+            # 내부 점: 중심차분
+            if N > 2:
+                df[:, 1:N-1] = (f[:, 2:N] - f[:, 0:N-2]) / (2 * h)
+            
+            # 경계 점: 전진/후진 차분
+            if N > 1:
+                df[:, 0] = (f[:, 1] - f[:, 0]) / h  # 첫 번째 점: 전진 차분
+                df[:, N-1] = (f[:, N-1] - f[:, N-2]) / h  # 마지막 점: 후진 차분
+            elif N == 1:
+                df[:, 0] = 0.0  # 단일 점: 미분 불가
+        
+        else:
+            raise ValueError(f"axis must be 0 or 1, got {axis}")
+        
+        return df
     
     def compute_potential_map(
         self,
@@ -217,10 +281,12 @@ class GridAnalyzer:
         dx = (x_max - x_min) / (self.grid_size[0] - 1)  # grid_size[0] = N_x
         dy = (y_max - y_min) / (self.grid_size[1] - 1)  # grid_size[1] = N_y
         
-        # 수치적 미분
+        # 수치적 미분 (중심차분, compute_field_map과 일관성 유지)
         # ∂/∂x → axis=0, ∂/∂y → axis=1
-        dgx_dx = np.gradient(gx_map, axis=0) / dx  # axis=0 (x 방향)
-        dgy_dy = np.gradient(gy_map, axis=1) / dy  # axis=1 (y 방향)
+        # 내부 점: 중심차분 (f[i+1] - f[i-1]) / (2*dx)
+        # 경계 점: 전진/후진 차분
+        dgx_dx = self._central_difference(gx_map, axis=0, dx=dx)
+        dgy_dy = self._central_difference(gy_map, axis=1, dy=dy)
         
         divergence = dgx_dx + dgy_dy
         
@@ -245,7 +311,7 @@ class GridAnalyzer:
         참고:
         - 순수 퍼텐셜 필드(g = -∇V)는 이론상 curl = 0 (연속/매끄러운 V 가정)
         - 수치 계산에서는 격자 간격(dx, dy), epsilon(기울기 계산), 경계 조건, 특이점(예: r=0 근처 softening)에 의해 잔차가 남을 수 있음
-        - curl ≠ 0이면 비퍼텐셜 성분(예: 마그네틱 필드, 난류) 탐지 가능
+        - curl ≠ 0이면 비퍼텐셜 성분(예: 마그네틱 필드, 비보존력) 탐지 가능
         
         Args:
             gx_map: 필드 x 성분 맵
@@ -262,10 +328,12 @@ class GridAnalyzer:
         dx = (x_max - x_min) / (self.grid_size[0] - 1)  # grid_size[0] = N_x
         dy = (y_max - y_min) / (self.grid_size[1] - 1)  # grid_size[1] = N_y
         
-        # 수치적 미분
+        # 수치적 미분 (중심차분, compute_field_map과 일관성 유지)
         # ∂/∂x → axis=0, ∂/∂y → axis=1
-        dgy_dx = np.gradient(gy_map, axis=0) / dx  # axis=0 (x 방향)
-        dgx_dy = np.gradient(gx_map, axis=1) / dy  # axis=1 (y 방향)
+        # 내부 점: 중심차분 (f[i+1] - f[i-1]) / (2*dx)
+        # 경계 점: 전진/후진 차분
+        dgy_dx = self._central_difference(gy_map, axis=0, dx=dx)
+        dgx_dy = self._central_difference(gx_map, axis=1, dy=dy)
         
         curl = dgy_dx - dgx_dy
         
@@ -419,10 +487,10 @@ class GridVisualizer:
     def plot_divergence(
         self,
         divergence: np.ndarray,
-        title: str = "Divergence Map (Distortion Detection)",
+        title: str = "Divergence Map (Source/Sink Structure)",
         save_path: Optional[str] = None,
     ):
-        """발산 맵 시각화 (왜곡 탐지)
+        """발산 맵 시각화 (소스/싱크 구조 분석)
         
         Args:
             divergence: 발산 맵
@@ -457,10 +525,10 @@ class GridVisualizer:
     def plot_curl(
         self,
         curl: np.ndarray,
-        title: str = "Curl Map (Distortion Detection)",
+        title: str = "Curl Map (Non-Conservative Component)",
         save_path: Optional[str] = None,
     ):
-        """회전 맵 시각화 (왜곡 탐지)
+        """회전 맵 시각화 (비보존 성분 분석)
         
         Args:
             curl: 회전 맵
@@ -521,14 +589,14 @@ class GridVisualizer:
         # 발산 맵
         self.plot_divergence(
             analysis_result["divergence"],
-            title="Divergence Map (Distortion Detection)",
+            title="Divergence Map (Source/Sink Structure)",
             save_path=f"{save_dir}/divergence_map.png" if save_dir else None,
         )
         
         # 회전 맵
         self.plot_curl(
             analysis_result["curl"],
-            title="Curl Map (Distortion Detection)",
+            title="Curl Map (Non-Conservative Component)",
             save_path=f"{save_dir}/curl_map.png" if save_dir else None,
         )
 

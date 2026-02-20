@@ -5,7 +5,7 @@
 은유 → 실제 코드 매핑:
 - 태양계 은유 → 중력 퍼텐셜 V_gravity(x) = -G * M / ||x - x_center||
 - 우물 은유 → Hopfield 에너지 E(x) = -(1/2) * Σ_ij w_ij x_i x_j - Σ_i b_i x_i
-- 난류 은유 → 발산/회전 계산 (왜곡 탐지)
+- 벡터장 분석 → 발산/회전 계산 (벡터장 구조 분석)
 
 수식:
 - 퍼텐셜: V(x)
@@ -14,6 +14,8 @@
 - 속도 업데이트: v_{t+1} = v_t + dt * a
 - 위치 업데이트: x_{t+1} = x_t + dt * v_{t+1}
 - 에너지: E = (1/2) * v^2 + V(x)
+
+참고: 위 적분 방식은 semi-implicit (symplectic) Euler 형태이다. 일반 explicit Euler보다 에너지 보존 특성이 우수하다.
 
 개념 및 논문 출처:
 - 퍼텐셜 필드: Classical mechanics (Lagrangian/Hamiltonian formalism), Field theory
@@ -76,6 +78,8 @@ class PotentialFieldEngine(SelfOrganizingEngine):
     - 위치 업데이트: x_{t+1} = x_t + dt * v_{t+1}
     - 에너지: E = (1/2) * v^2 + V(x)
     
+    참고: 위 적분 방식은 semi-implicit (symplectic) Euler 형태이다. 일반 explicit Euler보다 에너지 보존 특성이 우수하다.
+    
     설계 원칙:
     - 불변성 유지: state를 직접 수정하지 않고 copy-and-return
     - 하드코딩 제거: 모든 상수를 파라미터로 받음
@@ -131,6 +135,8 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         - 속도 업데이트: v_{t+1} = v_t + dt * a
         - 위치 업데이트: x_{t+1} = x_t + dt * v_{t+1}
         - 에너지: E = (1/2) * v^2 + V(x)
+        
+        참고: 위 적분 방식은 semi-implicit (symplectic) Euler 형태이다. 일반 explicit Euler보다 에너지 보존 특성이 우수하다.
         
         Args:
             state: 현재 상태
