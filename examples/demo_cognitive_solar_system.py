@@ -1,11 +1,26 @@
 """인지적 태양계 데모: 코어(중력) - 공간(필드) - 방향(벡터)
 
-개념:
-- 필드(Field) = 공간 (시공간 다양체): 데이터가 존재하고 움직일 수 있는 '무대'
-- 벡터(Vector) = 방향 (흐름의 가이드): 공간 내의 한 지점에서 다음 지점으로의 방향
-- 중력(Gravity) = 코어 (질량과 질서의 원천): 공간을 왜곡시켜 벡터들이 자신을 향하게 만드는 중심점
+이 데모는 "퍼텐셜(스칼라) → 기울기(벡터장) → 발산/회전(구조)" 흐름을 시각화합니다.
 
-이 데모는 코어(중력)를 추가하여 공간(필드)의 방향(벡터)이 어떻게 변하는지 시각화합니다.
+개념:
+- 필드(Field) = 공간: 스칼라장 V(x,y) - 데이터가 존재하고 움직일 수 있는 '무대'
+- 벡터(Vector) = 방향: 벡터장 g(x,y) = -∇V - 공간 내의 한 지점에서 다음 지점으로의 방향
+- 중력(Gravity) = 코어: 중력 퍼텐셜에서 유도된 특수한 벡터장 (중력장 ⊂ 벡터장)
+
+물리적 해석:
+- 퍼텐셜(스칼라장) V: "공간의 지형"
+- 필드(벡터장) g = -∇V: "그 지형이 만드는 방향"
+- 중력: "특정한 V 선택(뉴턴 중력 퍼텐셜)"
+- 코어: "질량이 있는 지점(특이점/싱크 구조)"
+
+발산 해석:
+- 점질량 중력의 발산은 코어 위치에서만 델타함수로 발산이 생기고,
+- 그 외 영역은 ∇·g = 0 (질량 밀도 0이면)
+- 즉 "코어에서만 강하게 음수(싱크)로 튀고, 나머지는 거의 0"이 물리적으로 자연스러움
+
+회전 해석:
+- 순수 퍼텐셜 필드(g = -∇V)는 이론상 curl = 0
+- 보이는 curl 값은 수치 잔차 (격자 해상도, epsilon, 경계 차분 등)
 """
 
 import numpy as np
@@ -20,6 +35,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from gravity_field import create_gravity_potential
 from grid_analyzer import GridAnalyzer, GridVisualizer
+from examples.EXAMPLE_CONFIG import (
+    DEMO_GRID_SIZE,
+    DEMO_HIGH_RES_GRID_SIZE,
+    DEMO_X_RANGE,
+    DEMO_Y_RANGE,
+    DEMO_G,
+    DEMO_SINGLE_CORE_MASS,
+    DEMO_DUAL_CORE_MASSES,
+    DEMO_MULTI_CORE_MASSES,
+    DEMO_EPSILON,
+)
 
 
 def demo_core_space_direction():
@@ -73,14 +99,14 @@ def demo_no_core(output_dir):
     def flat_potential(x):
         return 0.0  # 평평한 공간
     
-    # 그리드 분석
+    # 그리드 분석 (CONFIG 기본값 사용)
     analyzer = GridAnalyzer(
-        x_range=(-5.0, 5.0),
-        y_range=(-5.0, 5.0),
-        grid_size=(100, 100),
+        x_range=DEMO_X_RANGE,
+        y_range=DEMO_Y_RANGE,
+        grid_size=DEMO_GRID_SIZE,
     )
     
-    analysis = analyzer.analyze(flat_potential, epsilon=1e-6)
+    analysis = analyzer.analyze(flat_potential, epsilon=DEMO_EPSILON)
     visualizer = GridVisualizer(analyzer)
     
     # 시각화
@@ -106,18 +132,18 @@ def demo_single_core(output_dir):
     
     # 단일 코어 (중심에 질량)
     masses = [
-        (np.array([0.0, 0.0]), 2.0),  # 중심에 큰 질량
+        (np.array([0.0, 0.0]), DEMO_SINGLE_CORE_MASS),
     ]
-    gravity_potential = create_gravity_potential(masses, G=1.0)
+    gravity_potential = create_gravity_potential(masses, G=DEMO_G)
     
-    # 그리드 분석
+    # 그리드 분석 (CONFIG 기본값 사용)
     analyzer = GridAnalyzer(
-        x_range=(-5.0, 5.0),
-        y_range=(-5.0, 5.0),
-        grid_size=(100, 100),
+        x_range=DEMO_X_RANGE,
+        y_range=DEMO_Y_RANGE,
+        grid_size=DEMO_GRID_SIZE,
     )
     
-    analysis = analyzer.analyze(gravity_potential, epsilon=1e-6)
+    analysis = analyzer.analyze(gravity_potential, epsilon=DEMO_EPSILON)
     visualizer = GridVisualizer(analyzer)
     
     # 시각화
@@ -136,12 +162,12 @@ def demo_single_core(output_dir):
     
     visualizer.plot_divergence(
         analysis["divergence"],
-        title="코어 탐지: 발산 분석 (싱크 영역)",
+        title="코어 탐지: 발산 분석 (코어 위치에서 싱크)",
         save_path=str(output_dir / "divergence.png"),
     )
     
     print("  ✅ 단일 코어: 모든 방향(벡터)이 코어(중심)로 수렴")
-    print("  ✅ 발산 분석: 코어 위치에서 싱크 영역 탐지")
+    print("  ✅ 발산 분석: 코어 위치에서만 싱크 영역 탐지 (나머지는 거의 0)")
 
 
 def demo_dual_core(output_dir):
@@ -150,19 +176,18 @@ def demo_dual_core(output_dir):
     
     # 이중 코어 (두 개의 질량)
     masses = [
-        (np.array([-2.0, 0.0]), 2.0),  # 왼쪽 코어
-        (np.array([2.0, 0.0]), 1.5),  # 오른쪽 코어
+        (np.array(pos), mass) for pos, mass in DEMO_DUAL_CORE_MASSES
     ]
-    gravity_potential = create_gravity_potential(masses, G=1.0)
+    gravity_potential = create_gravity_potential(masses, G=DEMO_G)
     
-    # 그리드 분석
+    # 그리드 분석 (CONFIG 기본값 사용)
     analyzer = GridAnalyzer(
-        x_range=(-5.0, 5.0),
-        y_range=(-5.0, 5.0),
-        grid_size=(100, 100),
+        x_range=DEMO_X_RANGE,
+        y_range=DEMO_Y_RANGE,
+        grid_size=DEMO_GRID_SIZE,
     )
     
-    analysis = analyzer.analyze(gravity_potential, epsilon=1e-6)
+    analysis = analyzer.analyze(gravity_potential, epsilon=DEMO_EPSILON)
     visualizer = GridVisualizer(analyzer)
     
     # 시각화
@@ -181,12 +206,12 @@ def demo_dual_core(output_dir):
     
     visualizer.plot_divergence(
         analysis["divergence"],
-        title="코어 탐지: 발산 분석 (두 개의 싱크)",
+        title="코어 탐지: 발산 분석 (두 코어 위치에서 싱크)",
         save_path=str(output_dir / "divergence.png"),
     )
     
     print("  ✅ 이중 코어: 방향(벡터)이 두 코어 중 가까운 쪽으로 수렴")
-    print("  ✅ 발산 분석: 두 개의 싱크 영역 탐지")
+    print("  ✅ 발산 분석: 두 코어 위치에서만 싱크 영역 탐지 (나머지는 거의 0)")
 
 
 def demo_multi_core(output_dir):
@@ -195,22 +220,18 @@ def demo_multi_core(output_dir):
     
     # 다중 코어 (여러 개의 질량)
     masses = [
-        (np.array([-2.0, -2.0]), 1.5),  # 좌하단 코어
-        (np.array([2.0, -2.0]), 1.0),   # 우하단 코어
-        (np.array([0.0, 2.0]), 2.0),    # 상단 코어 (가장 강함)
-        (np.array([-1.0, 0.0]), 0.8),   # 좌측 코어
-        (np.array([1.0, 0.0]), 0.8),    # 우측 코어
+        (np.array(pos), mass) for pos, mass in DEMO_MULTI_CORE_MASSES
     ]
-    gravity_potential = create_gravity_potential(masses, G=1.0)
+    gravity_potential = create_gravity_potential(masses, G=DEMO_G)
     
-    # 그리드 분석
+    # 그리드 분석 (고해상도)
     analyzer = GridAnalyzer(
-        x_range=(-5.0, 5.0),
-        y_range=(-5.0, 5.0),
-        grid_size=(150, 150),  # 더 높은 해상도
+        x_range=DEMO_X_RANGE,
+        y_range=DEMO_Y_RANGE,
+        grid_size=DEMO_HIGH_RES_GRID_SIZE,
     )
     
-    analysis = analyzer.analyze(gravity_potential, epsilon=1e-6)
+    analysis = analyzer.analyze(gravity_potential, epsilon=DEMO_EPSILON)
     visualizer = GridVisualizer(analyzer)
     
     # 시각화
@@ -229,18 +250,19 @@ def demo_multi_core(output_dir):
     
     visualizer.plot_divergence(
         analysis["divergence"],
-        title="코어 탐지: 발산 분석 (다중 싱크)",
+        title="코어 탐지: 발산 분석 (다중 코어 위치에서 싱크)",
         save_path=str(output_dir / "divergence.png"),
     )
     
     visualizer.plot_curl(
         analysis["curl"],
-        title="비보존 성분: 회전 분석",
+        title="회전(curl) 수치 잔차 확인",
         save_path=str(output_dir / "curl.png"),
     )
     
     print("  ✅ 다중 코어: 방향(벡터)이 가장 가까운/강한 코어로 수렴")
-    print("  ✅ 발산 분석: 여러 개의 싱크 영역 탐지")
+    print("  ✅ 발산 분석: 여러 코어 위치에서만 싱크 영역 탐지 (나머지는 거의 0)")
+    print("  ✅ 회전 분석: 순수 퍼텐셜 필드이므로 이론상 curl=0 (보이는 값은 수치 잔차)")
     print("  ✅ 복잡한 인지 공간: 여러 기억/의도가 경쟁하는 구조")
 
 
@@ -254,21 +276,21 @@ def demo_core_addition_comparison(output_dir):
     
     # 코어 추가
     masses = [
-        (np.array([0.0, 0.0]), 2.0),
+        (np.array([0.0, 0.0]), DEMO_SINGLE_CORE_MASS),
     ]
-    gravity_potential = create_gravity_potential(masses, G=1.0)
+    gravity_potential = create_gravity_potential(masses, G=DEMO_G)
     
     analyzer = GridAnalyzer(
-        x_range=(-5.0, 5.0),
-        y_range=(-5.0, 5.0),
-        grid_size=(100, 100),
+        x_range=DEMO_X_RANGE,
+        y_range=DEMO_Y_RANGE,
+        grid_size=DEMO_GRID_SIZE,
     )
     
     # 코어 없음 분석
-    analysis_no_core = analyzer.analyze(flat_potential, epsilon=1e-6)
+    analysis_no_core = analyzer.analyze(flat_potential, epsilon=DEMO_EPSILON)
     
     # 코어 추가 분석
-    analysis_with_core = analyzer.analyze(gravity_potential, epsilon=1e-6)
+    analysis_with_core = analyzer.analyze(gravity_potential, epsilon=DEMO_EPSILON)
     
     visualizer = GridVisualizer(analyzer)
     
@@ -334,7 +356,7 @@ def demo_core_addition_comparison(output_dir):
         levels=50,
         cmap='RdBu_r',
     )
-    ax.set_title("코어 추가: 싱크 영역 탐지 (코어 위치)")
+    ax.set_title("코어 추가: 코어 위치에서만 싱크 탐지 (나머지는 거의 0)")
     ax.set_xlabel('x')
     ax.set_ylabel('y')
     plt.colorbar(im, ax=ax, label='∇·g')
