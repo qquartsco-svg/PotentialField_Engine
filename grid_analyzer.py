@@ -33,6 +33,9 @@ import numpy as np
 from typing import Callable, Tuple, Dict, Any, Optional
 import logging
 
+# CONFIG: 모든 하드코딩된 상수는 여기서만 정의
+from .CONFIG import EPSILON, DEFAULT_GRID_SIZE, DEFAULT_X_RANGE, DEFAULT_Y_RANGE, DEFAULT_ENABLE_LOGGING
+
 # matplotlib은 선택적 의존성 (시각화가 필요한 경우만)
 try:
     import matplotlib.pyplot as plt
@@ -57,23 +60,28 @@ class GridAnalyzer:
     
     def __init__(
         self,
-        x_range: Tuple[float, float],
-        y_range: Tuple[float, float],
-        grid_size: Tuple[int, int] = (100, 100),
-        enable_logging: bool = True,
+        x_range: Tuple[float, float] = None,
+        y_range: Tuple[float, float] = None,
+        grid_size: Tuple[int, int] = None,
+        enable_logging: bool = None,
     ):
         """GridAnalyzer 초기화
         
+        설계 원칙:
+        - 하드코딩 금지: 모든 기본값은 CONFIG에서 가져옴
+        - 연구용 도구: 실행 루프와 분리된 시각화 유틸리티
+        
         Args:
-            x_range: x 범위 (x_min, x_max)
-            y_range: y 범위 (y_min, y_max)
-            grid_size: 그리드 크기 (N_x, N_y)
-            enable_logging: 로깅 활성화 여부
+            x_range: x 범위 (None이면 CONFIG.DEFAULT_X_RANGE 사용)
+            y_range: y 범위 (None이면 CONFIG.DEFAULT_Y_RANGE 사용)
+            grid_size: 그리드 크기 (None이면 CONFIG.DEFAULT_GRID_SIZE 사용)
+            enable_logging: 로깅 활성화 여부 (None이면 CONFIG.DEFAULT_ENABLE_LOGGING 사용)
         """
-        self.x_range = x_range
-        self.y_range = y_range
-        self.grid_size = grid_size
-        self.enable_logging = enable_logging
+        # CONFIG에서 기본값 가져오기 (하드코딩 금지)
+        self.x_range = x_range if x_range is not None else DEFAULT_X_RANGE
+        self.y_range = y_range if y_range is not None else DEFAULT_Y_RANGE
+        self.grid_size = grid_size if grid_size is not None else DEFAULT_GRID_SIZE
+        self.enable_logging = enable_logging if enable_logging is not None else DEFAULT_ENABLE_LOGGING
         
         if enable_logging:
             self.logger = logging.getLogger("GridAnalyzer")
@@ -126,7 +134,7 @@ class GridAnalyzer:
     def compute_field_map(
         self,
         potential_func: Callable[[np.ndarray], float],
-        epsilon: float = 1e-6,
+        epsilon: float = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """필드 맵 계산
         
@@ -242,13 +250,16 @@ class GridAnalyzer:
     def analyze(
         self,
         potential_func: Callable[[np.ndarray], float],
-        epsilon: float = 1e-6,
+        epsilon: float = None,
     ) -> Dict[str, np.ndarray]:
         """전체 분석 수행
         
+        설계 원칙:
+        - 하드코딩 금지: epsilon은 CONFIG에서 가져옴
+        
         Args:
             potential_func: 퍼텐셜 함수 V(x) -> float
-            epsilon: 수치 기울기 계산용 작은 값
+            epsilon: 수치 기울기 계산용 작은 값 (None이면 CONFIG.EPSILON 사용)
             
         Returns:
             분석 결과 딕셔너리

@@ -35,6 +35,9 @@ import numpy as np
 from typing import Callable, Dict, Any, Optional
 import logging
 
+# CONFIG: 모든 하드코딩된 상수는 여기서만 정의
+from .CONFIG import EPSILON, DT, DEFAULT_ENABLE_LOGGING
+
 # 독립 모듈: BrainCore의 GlobalState와 SelfOrganizingEngine을 import
 # BrainCore가 설치되어 있어야 함
 try:
@@ -78,22 +81,27 @@ class PotentialFieldEngine(SelfOrganizingEngine):
     def __init__(
         self,
         potential_func: Callable[[np.ndarray], float],
-        dt: float = 0.01,
-        epsilon: float = 1e-6,
-        enable_logging: bool = True,
+        dt: float = None,
+        epsilon: float = None,
+        enable_logging: bool = None,
     ):
         """PotentialFieldEngine 초기화
         
+        설계 원칙:
+        - 하드코딩 금지: 모든 기본값은 CONFIG에서 가져옴
+        - 외부 제어 가능: 파라미터로 오버라이드 가능
+        
         Args:
             potential_func: 퍼텐셜 함수 V(x) -> float
-            dt: 시간 스텝 (기본값: 0.01)
-            epsilon: 수치 기울기 계산용 작은 값 (기본값: 1e-6)
-            enable_logging: 로깅 활성화 여부
+            dt: 시간 스텝 (None이면 CONFIG.DT 사용)
+            epsilon: 수치 기울기 계산용 작은 값 (None이면 CONFIG.EPSILON 사용)
+            enable_logging: 로깅 활성화 여부 (None이면 CONFIG.DEFAULT_ENABLE_LOGGING 사용)
         """
         self.potential_func = potential_func
-        self.dt = dt
-        self.epsilon = epsilon
-        self.enable_logging = enable_logging
+        # CONFIG에서 기본값 가져오기 (하드코딩 금지)
+        self.dt = dt if dt is not None else DT
+        self.epsilon = epsilon if epsilon is not None else EPSILON
+        self.enable_logging = enable_logging if enable_logging is not None else DEFAULT_ENABLE_LOGGING
         
         if enable_logging:
             self.logger = logging.getLogger("PotentialFieldEngine")

@@ -26,6 +26,9 @@ import numpy as np
 from typing import Callable, List, Tuple, Optional
 import logging
 
+# CONFIG: 모든 하드코딩된 상수는 여기서만 정의
+from .CONFIG import GRAVITY_CONSTANT, SOFTENING, DEFAULT_ENABLE_LOGGING
+
 
 class GravityField:
     """중력장 필드
@@ -41,22 +44,26 @@ class GravityField:
     def __init__(
         self,
         masses: List[Tuple[np.ndarray, float]],
-        G: float = 1.0,
-        softening: float = 1e-6,
-        enable_logging: bool = True,
+        G: float = None,
+        softening: float = None,
+        enable_logging: bool = None,
     ):
         """GravityField 초기화
         
+        설계 원칙:
+        - 하드코딩 금지: 모든 기본값은 CONFIG에서 가져옴
+        
         Args:
             masses: 질량 리스트 [(위치, 질량), ...]
-            G: 중력 상수 (기본값: 1.0)
-            softening: 수치 안정성을 위한 작은 값 (기본값: 1e-6)
-            enable_logging: 로깅 활성화 여부
+            G: 중력 상수 (None이면 CONFIG.GRAVITY_CONSTANT 사용)
+            softening: 수치 안정성을 위한 작은 값 (None이면 CONFIG.SOFTENING 사용)
+            enable_logging: 로깅 활성화 여부 (None이면 CONFIG.DEFAULT_ENABLE_LOGGING 사용)
         """
         self.masses = masses
-        self.G = G
-        self.softening = softening
-        self.enable_logging = enable_logging
+        # CONFIG에서 기본값 가져오기 (하드코딩 금지)
+        self.G = G if G is not None else GRAVITY_CONSTANT
+        self.softening = softening if softening is not None else SOFTENING
+        self.enable_logging = enable_logging if enable_logging is not None else DEFAULT_ENABLE_LOGGING
         
         if enable_logging:
             self.logger = logging.getLogger("GravityField")
@@ -130,20 +137,28 @@ class GravityField:
 
 def create_gravity_potential(
     masses: List[Tuple[np.ndarray, float]],
-    G: float = 1.0,
-    softening: float = 1e-6,
+    G: float = None,
+    softening: float = None,
 ) -> Callable[[np.ndarray], float]:
     """중력 퍼텐셜 함수 생성
     
+    설계 원칙:
+    - 하드코딩 금지: 모든 기본값은 CONFIG에서 가져옴
+    
     Args:
         masses: 질량 리스트 [(위치, 질량), ...]
-        G: 중력 상수
-        softening: 수치 안정성을 위한 작은 값
+        G: 중력 상수 (None이면 CONFIG.GRAVITY_CONSTANT 사용)
+        softening: 수치 안정성을 위한 작은 값 (None이면 CONFIG.SOFTENING 사용)
         
     Returns:
         퍼텐셜 함수 V(x) -> float
     """
-    gravity_field = GravityField(masses=masses, G=G, softening=softening)
+    # CONFIG에서 기본값 사용 (하드코딩 금지)
+    gravity_field = GravityField(
+        masses=masses, 
+        G=G if G is not None else GRAVITY_CONSTANT,
+        softening=softening if softening is not None else SOFTENING
+    )
     return gravity_field.potential
 
 
