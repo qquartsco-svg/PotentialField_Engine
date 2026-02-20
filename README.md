@@ -95,22 +95,36 @@ g_gravity(x) = -G * Σ_i (M_i * (x - x_i) / ||x - x_i||^3)
 pip install numpy matplotlib
 ```
 
-### BrainCore 연동
+### BrainCore 연동 (선택적)
 
-PotentialFieldEngine은 BrainCore와 연동됩니다. BrainCore가 설치되어 있어야 합니다.
+PotentialFieldEngine은 독립적으로 사용할 수 있으며, BrainCore와도 연동 가능합니다.
 
-```bash
-# BrainCore 경로를 PYTHONPATH에 추가하거나
-# BrainCore를 설치
-```
+**독립 사용**:
+- 모든 파일을 현재 디렉토리에 두고 직접 import하여 사용
+
+**BrainCore 연동**:
+- BrainCore가 설치되어 있어야 함
+- BrainCore 경로를 PYTHONPATH에 추가하거나 BrainCore를 설치
 
 ---
 
 ## 📖 사용법
 
+### 설치
+
+```bash
+# 저장소 클론
+git clone https://github.com/qquartsco-svg/PotentialField_Engine.git
+cd PotentialField_Engine
+
+# 의존성 설치
+pip install numpy matplotlib
+```
+
 ### 기본 사용
 
 ```python
+# 방법 1: 직접 import (현재 디렉토리에서)
 from potential_field_engine import PotentialFieldEngine
 from gravity_field import create_gravity_potential
 import numpy as np
@@ -126,28 +140,45 @@ field_engine = PotentialFieldEngine(
     epsilon=1e-6,
 )
 
-# BrainCore와 연동
-from brain_core import BrainCore, GlobalState
-
-core = BrainCore()
-core.register_engine("potential_field", field_engine, priority=30)
-
-# 실행
-initial_state = GlobalState(
-    state_vector=np.concatenate([
+# BrainCore와 연동 (선택적)
+# BrainCore가 설치되어 있어야 함
+try:
+    from brain_core import BrainCore, GlobalState
+    
+    core = BrainCore()
+    core.register_engine("potential_field", field_engine, priority=30)
+    
+    # 실행
+    initial_state = GlobalState(
+        state_vector=np.concatenate([
+            np.array([1.0, 0.0]),  # 위치
+            np.array([0.0, 0.0]),  # 속도
+        ]),
+        energy=0.0,
+        risk=0.0,
+    )
+    
+    result = core.run_cycle(initial_state=initial_state)
+except ImportError:
+    print("BrainCore가 설치되지 않았습니다. 독립적으로 사용할 수 있습니다.")
+    
+    # 독립 사용 예시
+    from brain_core.global_state import GlobalState  # 또는 직접 상태 생성
+    
+    # 상태 직접 생성 (예시)
+    state_vector = np.concatenate([
         np.array([1.0, 0.0]),  # 위치
         np.array([0.0, 0.0]),  # 속도
-    ]),
-    energy=0.0,
-    risk=0.0,
-)
-
-result = core.run_cycle(initial_state=initial_state)
+    ])
+    
+    # 엔진 업데이트
+    # new_state = field_engine.update(state)
 ```
 
 ### 그리드 분석
 
 ```python
+# 현재 디렉토리에서 직접 import
 from grid_analyzer import GridAnalyzer, GridVisualizer
 
 # 그리드 분석기 생성
@@ -175,6 +206,7 @@ visualizer.plot_all(analysis_result, save_dir="./output")
 ### Hopfield 에너지 → 퍼텐셜 변환
 
 ```python
+# 현재 디렉토리에서 직접 import
 from well_formation_integration import create_potential_from_wells
 
 # WellFormationEngine 결과 (W, b)
@@ -194,6 +226,7 @@ field_engine = PotentialFieldEngine(potential_func=potential_func)
 ### 여러 퍼텐셜 합성
 
 ```python
+# 현재 디렉토리에서 직접 import
 from gravity_field import create_composite_potential
 
 # 여러 퍼텐셜 합성
@@ -231,18 +264,21 @@ field_engine = PotentialFieldEngine(potential_func=composite_potential)
 ## 📁 파일 구조
 
 ```
-PotentialFieldEngine/
+PotentialField_Engine/
 ├── __init__.py                      # 모듈 초기화
 ├── README.md                        # 이 파일
 ├── CONCEPT.md                       # 개념 정리
 ├── CONCEPT_REFERENCES.md            # 개념 및 논문 출처
 ├── IMPLEMENTATION_SUMMARY.md        # 구현 요약
-├── potential_field_engine.py        # 핵심 엔진
-├── gravity_field.py                # 중력장 구현
-├── grid_analyzer.py                # 그리드 분석 및 시각화
-├── well_formation_integration.py   # WellFormationEngine 연계
-└── test_demo.py                    # 테스트 및 데모
+├── PHAM_SIGNATURE.md                # PHAM 블록체인 서명 정보
+├── potential_field_engine.py        # 핵심 엔진 (234줄)
+├── gravity_field.py                # 중력장 구현 (188줄)
+├── grid_analyzer.py                # 그리드 분석 및 시각화 (494줄)
+├── well_formation_integration.py   # WellFormationEngine 연계 (132줄)
+└── test_demo.py                    # 테스트 및 데모 (224줄)
 ```
+
+**총 코드 라인 수**: 약 1,325줄 (Python)
 
 ---
 
