@@ -81,6 +81,7 @@ class PotentialFieldEngine(SelfOrganizingEngine):
     def __init__(
         self,
         potential_func: Callable[[np.ndarray], float],
+        field_func: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         dt: float = None,
         epsilon: float = None,
         enable_logging: bool = None,
@@ -90,14 +91,17 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         설계 원칙:
         - 하드코딩 금지: 모든 기본값은 CONFIG에서 가져옴
         - 외부 제어 가능: 파라미터로 오버라이드 가능
+        - 성능 최적화: field_func가 있으면 해석적 기울기 사용, 없으면 수치 미분
         
         Args:
             potential_func: 퍼텐셜 함수 V(x) -> float
+            field_func: 필드 함수 g(x) -> np.ndarray (Optional, 있으면 해석적 기울기 사용)
             dt: 시간 스텝 (None이면 CONFIG.DT 사용)
-            epsilon: 수치 기울기 계산용 작은 값 (None이면 CONFIG.EPSILON 사용)
+            epsilon: 수치 기울기 계산용 작은 값 (None이면 CONFIG.EPSILON 사용, field_func가 없을 때만 사용)
             enable_logging: 로깅 활성화 여부 (None이면 CONFIG.DEFAULT_ENABLE_LOGGING 사용)
         """
         self.potential_func = potential_func
+        self.field_func = field_func  # 해석적 필드 함수 (Optional)
         # CONFIG에서 기본값 가져오기 (하드코딩 금지)
         self.dt = dt if dt is not None else DT
         self.epsilon = epsilon if epsilon is not None else EPSILON
@@ -133,17 +137,18 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         # 상태 복사 (불변성 유지)
         new_state = state.copy(deep=False)
         
-        # state_vector를 위치(x)와 속도(v)로 분리
-        # 가정: state_vector = [x1, x2, ..., xN, v1, v2, ..., vN]
-        dim = len(new_state.state_vector) // 2
+        # state_vector 차원 규약 강제: 항상 [x, v] 쌍이어야 함 (짝수 길이)
+        # 규약: state_vector = [x1, x2, ..., xN, v1, v2, ..., vN]
+        n = len(new_state.state_vector)
+        if n % 2 != 0:
+            raise ValueError(
+                f"state_vector must have even length (got {n}). "
+                f"Expected format: [x1, ..., xN, v1, ..., vN] where N = {n//2}"
+            )
         
-        if dim == 0:
-            # 속도가 없는 경우 (위치만 있는 경우)
-            x = new_state.state_vector
-            v = np.zeros_like(x)
-        else:
-            x = new_state.state_vector[:dim]  # 위치
-            v = new_state.state_vector[dim:]   # 속도
+        dim = n // 2
+        x = new_state.state_vector[:dim]  # 위치
+        v = new_state.state_vector[dim:]   # 속도
         
         # 퍼텐셜 계산
         V = self.potential_func(x)
@@ -163,11 +168,7 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         x_new = x + self.dt * v_new
         
         # 상태 벡터 업데이트
-        if dim == 0:
-            # 속도가 없었던 경우, 속도 추가
-            new_state.state_vector = np.concatenate([x_new, v_new])
-        else:
-            new_state.state_vector = np.concatenate([x_new, v_new])
+        new_state.state_vector = np.concatenate([x_new, v_new])
         
         # 에너지 계산 (운동 에너지 + 퍼텐셜 에너지)
         # 수식: E = (1/2) * v^2 + V(x)
@@ -198,6 +199,10 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         
         수식: g(x) = -∇V(x)
         
+        계산 방법:
+        - field_func가 있으면: 해석적 필드 사용 (성능/정확도 우수)
+        - field_func가 없으면: 수치적 기울기 계산 (fallback)
+        
         수치적 기울기 계산:
         g_i = (V(x + ε·e_i) - V(x - ε·e_i)) / (2ε)
         
@@ -207,6 +212,11 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         Returns:
             필드 벡터 (기울기)
         """
+        # 해석적 필드 함수가 있으면 사용 (성능/정확도 우수)
+        if self.field_func is not None:
+            return self.field_func(x)
+        
+        # 수치적 기울기 계산 (fallback)
         grad = np.zeros_like(x)
         for i in range(len(x)):
             x_plus = x.copy()

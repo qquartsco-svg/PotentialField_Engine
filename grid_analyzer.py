@@ -103,7 +103,8 @@ class GridAnalyzer:
         
         x = np.linspace(x_min, x_max, N_x)
         y = np.linspace(y_min, y_max, N_y)
-        x_grid, y_grid = np.meshgrid(x, y)
+        # indexing="ij"로 shape을 (N_x, N_y)로 맞춤 (grid_size와 일치)
+        x_grid, y_grid = np.meshgrid(x, y, indexing='ij')
         
         return x_grid, y_grid
     
@@ -140,13 +141,19 @@ class GridAnalyzer:
         
         수식: g(x) = -∇V(x)
         
+        설계 원칙:
+        - 하드코딩 금지: epsilon은 CONFIG에서 가져옴
+        
         Args:
             potential_func: 퍼텐셜 함수 V(x) -> float
-            epsilon: 수치 기울기 계산용 작은 값
+            epsilon: 수치 기울기 계산용 작은 값 (None이면 CONFIG.EPSILON 사용)
             
         Returns:
             (gx_map, gy_map) 튜플 (필드 x, y 성분)
         """
+        # CONFIG에서 기본값 사용 (하드코딩 금지, 직접 호출 시에도 안전)
+        epsilon = epsilon if epsilon is not None else EPSILON
+        
         gx_map = np.zeros(self.grid_size)
         gy_map = np.zeros(self.grid_size)
         
@@ -177,14 +184,18 @@ class GridAnalyzer:
         gx_map: np.ndarray,
         gy_map: np.ndarray,
     ) -> np.ndarray:
-        """발산 계산 (왜곡 탐지)
+        """발산 계산
         
         수식: ∇·g = ∂g_x/∂x + ∂g_y/∂y
         
-        의미:
-        - ∇·g > 0: 발산 영역 (불안정)
-        - ∇·g < 0: 수렴 영역 (안정)
-        - ∇·g = 0: 중성 영역
+        물리적 의미:
+        - ∇·g > 0: 소스 영역 (질량/원천이 있는 영역)
+        - ∇·g < 0: 싱크 영역 (흡수/소멸이 있는 영역)
+        - ∇·g = 0: 라플라시안 구조 (보존 영역)
+        
+        참고:
+        - 순수 퍼텐셜 필드(g = -∇V)의 경우 Poisson 방정식: ∇²V = -∇·g
+        - 발산은 "안정/불안정"과 직접 연결되지 않음 (라플라시안 구조 탐지)
         
         Args:
             gx_map: 필드 x 성분 맵
@@ -215,13 +226,17 @@ class GridAnalyzer:
         gx_map: np.ndarray,
         gy_map: np.ndarray,
     ) -> np.ndarray:
-        """회전 계산 (왜곡 탐지)
+        """회전 계산
         
         수식: ∇×g = ∂g_y/∂x - ∂g_x/∂y  (2D)
         
-        의미:
-        - ∇×g ≠ 0: 왜곡 영역 (비보존력)
-        - ∇×g = 0: 보존력 영역
+        물리적 의미:
+        - ∇×g ≠ 0: 비보존 성분/비퍼텐셜 성분 (회전 성분 존재)
+        - ∇×g = 0: 순수 퍼텐셜 필드 (보존력, 수치 오차만 남음)
+        
+        참고:
+        - 순수 퍼텐셜 필드(g = -∇V)는 이론상 curl = 0
+        - curl ≠ 0이면 비퍼텐셜 성분(예: 마그네틱 필드, 난류) 탐지 가능
         
         Args:
             gx_map: 필드 x 성분 맵
