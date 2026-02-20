@@ -1,4 +1,4 @@
-# 최종 파일 상태 검증 보고서
+# 코드 구조 검증 보고서
 
 **작성일**: 2026-02-20  
 **작성자**: GNJz (Qquarts)  
@@ -6,23 +6,24 @@
 
 ---
 
-## ✅ 파일 상태 최종 확인
+## ✅ 코드 구조 확인
 
 ### 1. grid_analyzer.py ✅
 
-**compute_divergence()**:
-- `dx = (x_max - x_min) / (self.grid_size[0] - 1)` (grid_size[0] = N_x)
-- `dy = (y_max - y_min) / (self.grid_size[1] - 1)` (grid_size[1] = N_y)
-- `dgx_dx = np.gradient(gx_map, axis=0) / dx` (axis=0 = x 방향)
-- `dgy_dy = np.gradient(gy_map, axis=1) / dy` (axis=1 = y 방향)
+**compute_divergence() 구조**:
+- indexing='ij' 규약 사용: `np.meshgrid(..., indexing='ij')`
+- grid_size = (N_x, N_y) 형태
+- dx 계산: `(x_max - x_min) / (grid_size[0] - 1)` (grid_size[0] = N_x)
+- dy 계산: `(y_max - y_min) / (grid_size[1] - 1)` (grid_size[1] = N_y)
+- 미분 축 매핑: `axis=0` → x 방향, `axis=1` → y 방향
+- 발산 계산: `dgx_dx(axis=0)/dx + dgy_dy(axis=1)/dy`
 
-**compute_curl()**:
-- `dx = (x_max - x_min) / (self.grid_size[0] - 1)` (grid_size[0] = N_x)
-- `dy = (y_max - y_min) / (self.grid_size[1] - 1)` (grid_size[1] = N_y)
-- `dgy_dx = np.gradient(gy_map, axis=0) / dx` (axis=0 = x 방향)
-- `dgx_dy = np.gradient(gx_map, axis=1) / dy` (axis=1 = y 방향)
+**compute_curl() 구조**:
+- 동일한 indexing='ij' 규약 및 grid_size 구조
+- dx/dy 계산: 동일한 방식
+- 회전 계산: `dgy_dx(axis=0)/dx - dgx_dy(axis=1)/dy`
 
-**결론**: ✅ indexing='ij' 규약에 맞게 축/간격 계산 정확
+**결론**: ✅ indexing='ij' 규약에 맞게 축/간격 계산 구조 정확
 
 ---
 
