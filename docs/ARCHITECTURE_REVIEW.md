@@ -59,15 +59,12 @@ GridAnalyzer (연구용 분석)
 
 ### ⚠️ 남은 구조 리스크
 
-#### (1) state_vector 차원 규약 명문화 필요
+#### (1) state_vector 차원 규약 명문화
 
 **현재 상태**:
 - ✅ 코드에서 `n % 2 != 0` 체크 구현됨
-- ⚠️ 문서에 명시되어 있지 않음
-
-**필요 작업**:
-- README.md에 규약 명시
-- `__init__.py` docstring에 규약 명시
+- ✅ README.md에 "⚠️ 중요: GlobalState 규약" 섹션에 명시됨
+- ✅ `__init__.py` docstring에 규약 명시됨
 
 **규약**:
 ```
@@ -212,13 +209,13 @@ r = sqrt(|x - x_i|^2 + epsilon^2)
 
 ## 🚀 안정화 단계 완료를 위한 최소 작업
 
-### 필수 작업
+### 완료된 작업 ✅
 
-1. **README.md에 state_vector 규약 명시**
+1. ✅ **README.md에 state_vector 규약 명시** (완료)
    - 형식: `[x1, ..., xN, v1, ..., vN]` (2N 차원)
    - 홀수 길이 시 `ValueError` 발생
 
-2. **`__init__.py` docstring에 규약 명시**
+2. ✅ **`__init__.py` docstring에 규약 명시** (완료)
    - 모듈 레벨에서 규약 확인 가능
 
 ### 선택적 작업
