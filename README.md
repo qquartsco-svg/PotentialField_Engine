@@ -265,17 +265,24 @@ field_engine = PotentialFieldEngine(potential_func=composite_potential)
 
 ```
 PotentialField_Engine/
+├── README.md                        # 이 파일 (메인 문서)
 ├── __init__.py                      # 모듈 초기화
-├── README.md                        # 이 파일
-├── CONCEPT.md                       # 개념 정리
-├── CONCEPT_REFERENCES.md            # 개념 및 논문 출처
-├── IMPLEMENTATION_SUMMARY.md        # 구현 요약
-├── PHAM_SIGNATURE.md                # PHAM 블록체인 서명 정보
-├── potential_field_engine.py        # 핵심 엔진 (234줄)
-├── gravity_field.py                # 중력장 구현 (188줄)
-├── grid_analyzer.py                # 그리드 분석 및 시각화 (494줄)
-├── well_formation_integration.py   # WellFormationEngine 연계 (132줄)
-└── test_demo.py                    # 테스트 및 데모 (224줄)
+├── CONFIG.py                        # 설정 (모든 상수 정의)
+├── potential_field_engine.py        # 핵심 엔진
+├── gravity_field.py                # 중력장 구현
+├── grid_analyzer.py                # 그리드 분석 및 시각화
+├── well_formation_integration.py   # WellFormationEngine 연계
+├── docs/                            # 문서 폴더
+│   ├── CONCEPT.md                   # 개념 정리
+│   ├── CONCEPT_REFERENCES.md        # 개념 및 논문 출처
+│   ├── IMPLEMENTATION_SUMMARY.md    # 구현 요약
+│   ├── PHAM_SIGNATURE.md            # PHAM 블록체인 서명 정보
+│   ├── BUGFIX_SUMMARY.md            # 버그 수정 요약
+│   ├── COMPLIANCE_REPORT.md         # 규약 준수 보고서
+│   └── ... (기타 문서)
+└── examples/                        # 예제 및 데모
+    ├── test_demo.py                 # 기본 테스트 및 데모
+    └── demo_analytical_field.py     # 해석적 필드 궤도 운동 데모
 ```
 
 **총 코드 라인 수**: 약 1,325줄 (Python)
