@@ -24,9 +24,9 @@
 - 그리드 분석: Numerical methods, Finite difference method
 
 참고 문헌:
-- Gauss, C. F. (1813). "Theoria attractionis corporum sphaeroidicorum ellipticorum homogeneorum"
-- Stokes, G. G. (1854). "On the variation of gravity at the surface of the earth"
-- Lorenz, E. N. (1963). "Deterministic nonperiodic flow"
+- Vector calculus: Arfken, G. B., Weber, H. J., & Harris, F. E. (2013). "Mathematical Methods for Physicists" (7th ed.)
+- Numerical methods: Press, W. H., Teukolsky, S. A., Vetterling, W. T., & Flannery, B. P. (2007). "Numerical Recipes" (3rd ed.)
+- Fluid dynamics: Batchelor, G. K. (2000). "An Introduction to Fluid Dynamics"
 """
 
 import numpy as np
@@ -243,7 +243,8 @@ class GridAnalyzer:
         - ∇×g = 0: 순수 퍼텐셜 필드 (보존력, 수치 오차만 남음)
         
         참고:
-        - 순수 퍼텐셜 필드(g = -∇V)는 이론상 curl = 0
+        - 순수 퍼텐셜 필드(g = -∇V)는 이론상 curl = 0 (연속/매끄러운 V 가정)
+        - 수치 계산에서는 격자 간격(dx, dy), epsilon(기울기 계산), 경계 조건, 특이점(예: r=0 근처 softening)에 의해 잔차가 남을 수 있음
         - curl ≠ 0이면 비퍼텐셜 성분(예: 마그네틱 필드, 난류) 탐지 가능
         
         Args:

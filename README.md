@@ -95,7 +95,7 @@ g_gravity(x) = -G * Σ_i (M_i * (x - x_i) / ||x - x_i||^3)
 - ∇×g ≠ 0: 비보존 성분/비퍼텐셜 성분 (회전 성분 존재)
 - ∇×g = 0: 순수 퍼텐셜 필드 (보존력, 수치 오차만 남음)
 
-**물리적 의미**: 순수 퍼텐셜 필드(g = -∇V)는 이론상 curl = 0입니다. curl ≠ 0이면 비퍼텐셜 성분(예: 마그네틱 필드, 난류) 탐지 가능합니다.
+**물리적 의미**: 순수 퍼텐셜 필드(g = -∇V)는 이론상 curl = 0입니다 (연속/매끄러운 V 가정). 수치 계산에서는 격자 간격, epsilon(기울기 계산), 경계 조건, 특이점(예: r=0 근처 softening)에 의해 잔차가 남을 수 있습니다. curl ≠ 0이면 비퍼텐셜 성분(예: 마그네틱 필드, 난류) 탐지 가능합니다.
 
 ---
 
@@ -283,9 +283,9 @@ field_engine = PotentialFieldEngine(potential_func=composite_potential)
 ### 주요 출처
 
 - **퍼텐셜 필드**: Classical mechanics (Lagrangian/Hamiltonian formalism)
-- **중력**: Newton (1687), Poisson (1813)
-- **발산/회전**: Gauss (1813), Stokes (1854)
-- **난류**: Navier-Stokes equations, Chaos theory
+- **벡터 해석**: Arfken, G. B., Weber, H. J., & Harris, F. E. (2013). "Mathematical Methods for Physicists" (7th ed.)
+- **수치 해석**: Press, W. H., et al. (2007). "Numerical Recipes" (3rd ed.)
+- **유체 역학**: Batchelor, G. K. (2000). "An Introduction to Fluid Dynamics"
 
 자세한 내용은 `CONCEPT_REFERENCES.md` 참조
 
@@ -352,7 +352,7 @@ PotentialField_Engine/
 
 ### 회전 분석: 비보존 성분 탐지
 
-**비보존 성분 (∇×g ≠ 0)**: 순수 퍼텐셜 필드(g = -∇V)는 이론상 curl = 0이므로, curl ≠ 0이면 비퍼텐셜 성분(예: 마그네틱 필드, 난류) 탐지 가능합니다.
+**비보존 성분 (∇×g ≠ 0)**: 순수 퍼텐셜 필드(g = -∇V)는 이론상 curl = 0입니다 (연속/매끄러운 V 가정). 수치 계산에서는 격자 간격, epsilon, 경계 조건, 특이점에 의해 잔차가 남을 수 있습니다. curl ≠ 0이면 비퍼텐셜 성분(예: 마그네틱 필드, 난류) 탐지 가능합니다.
 
 **순수 퍼텐셜 필드 (∇×g = 0)**: 보존력 영역으로, 수치 오차만 남습니다.
 

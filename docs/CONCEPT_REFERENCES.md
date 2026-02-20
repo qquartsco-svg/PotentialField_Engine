@@ -145,7 +145,8 @@
 - Fluid dynamics
 
 **참고 문헌**:
-- Gauss, C. F. (1813). "Theoria attractionis corporum sphaeroidicorum ellipticorum homogeneorum"
+- Arfken, G. B., Weber, H. J., & Harris, F. E. (2013). "Mathematical Methods for Physicists" (7th ed.). Academic Press.
+- Vector calculus (Gauss's theorem): 표준 벡터 해석 교과서 참조
 - Navier, C. L. M. H. (1822). "Mémoire sur les lois du mouvement des fluides"
 
 ---
@@ -161,7 +162,8 @@
 - Electromagnetism
 
 **참고 문헌**:
-- Stokes, G. G. (1854). "On the variation of gravity at the surface of the earth"
+- Arfken, G. B., Weber, H. J., & Harris, F. E. (2013). "Mathematical Methods for Physicists" (7th ed.). Academic Press.
+- Vector calculus (Stokes' theorem): 표준 벡터 해석 교과서 참조
 - Maxwell, J. C. (1865). "A dynamical theory of the electromagnetic field"
 
 ---
