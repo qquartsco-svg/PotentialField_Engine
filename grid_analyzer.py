@@ -209,14 +209,17 @@ class GridAnalyzer:
             발산 맵
         """
         # 그리드 간격 계산
+        # indexing='ij' 기준: axis=0이 x 방향, axis=1이 y 방향
+        # grid_size = (N_x, N_y)
         x_min, x_max = self.x_range
         y_min, y_max = self.y_range
-        dx = (x_max - x_min) / (self.grid_size[1] - 1)
-        dy = (y_max - y_min) / (self.grid_size[0] - 1)
+        dx = (x_max - x_min) / (self.grid_size[0] - 1)  # grid_size[0] = N_x
+        dy = (y_max - y_min) / (self.grid_size[1] - 1)  # grid_size[1] = N_y
         
         # 수치적 미분
-        dgx_dx = np.gradient(gx_map, axis=1) / dx
-        dgy_dy = np.gradient(gy_map, axis=0) / dy
+        # ∂/∂x → axis=0, ∂/∂y → axis=1
+        dgx_dx = np.gradient(gx_map, axis=0) / dx  # axis=0 (x 방향)
+        dgy_dy = np.gradient(gy_map, axis=1) / dy  # axis=1 (y 방향)
         
         divergence = dgx_dx + dgy_dy
         
@@ -250,14 +253,17 @@ class GridAnalyzer:
             회전 맵
         """
         # 그리드 간격 계산
+        # indexing='ij' 기준: axis=0이 x 방향, axis=1이 y 방향
+        # grid_size = (N_x, N_y)
         x_min, x_max = self.x_range
         y_min, y_max = self.y_range
-        dx = (x_max - x_min) / (self.grid_size[1] - 1)
-        dy = (y_max - y_min) / (self.grid_size[0] - 1)
+        dx = (x_max - x_min) / (self.grid_size[0] - 1)  # grid_size[0] = N_x
+        dy = (y_max - y_min) / (self.grid_size[1] - 1)  # grid_size[1] = N_y
         
         # 수치적 미분
-        dgy_dx = np.gradient(gy_map, axis=1) / dx
-        dgx_dy = np.gradient(gx_map, axis=0) / dy
+        # ∂/∂x → axis=0, ∂/∂y → axis=1
+        dgy_dx = np.gradient(gy_map, axis=0) / dx  # axis=0 (x 방향)
+        dgx_dy = np.gradient(gx_map, axis=1) / dy  # axis=1 (y 방향)
         
         curl = dgy_dx - dgx_dy
         

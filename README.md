@@ -140,7 +140,8 @@ GlobalState.state_vector MUST be 2N dimensional:
 ### 기본 사용
 
 ```python
-# 방법 1: 직접 import (현재 디렉토리에서)
+# 방법 1: 패키지로 설치/import (권장)
+# pip install -e . 또는 PYTHONPATH에 추가 후
 from potential_field_engine import PotentialFieldEngine
 from gravity_field import create_gravity_potential
 import numpy as np
