@@ -2,32 +2,29 @@
 
 퍼텐셜 필드 엔진: 퍼텐셜 필드를 계산하고 상태를 업데이트합니다.
 
-은유 → 실제 코드 매핑:
-- 태양계 은유 → 중력 퍼텐셜 V_gravity(x) = -G * M / ||x - x_center||
-- 우물 은유 → Hopfield 에너지 E(x) = -(1/2) * Σ_ij w_ij x_i x_j - Σ_i b_i x_i
-- 벡터장 분석 → 발산/회전 계산 (벡터장 구조 분석)
-
 수식:
 - 퍼텐셜: V(x)
 - 필드(기울기): g(x) = -∇V(x)
-- 가속도: a = g(x)
-- 속도 업데이트: v_{t+1} = v_t + dt * a
-- 위치 업데이트: x_{t+1} = x_t + dt * v_{t+1}
-- 에너지: E = (1/2) * v^2 + V(x)
+- 에너지: E = (1/2)||v||² + V(x)
 
-참고: 위 적분 방식은 semi-implicit (symplectic) Euler 형태이다. 일반 explicit Euler보다 에너지 보존 특성이 우수하다.
+적분 방식 (두 가지):
 
-개념 및 논문 출처:
-- 퍼텐셜 필드: Classical mechanics (Lagrangian/Hamiltonian formalism), Field theory
-- 필드 (기울기): Vector calculus, Gradient descent theory
-- 동역학: Newtonian mechanics, Classical field theory
-- 에너지 보존: Hamiltonian mechanics, Conservation laws
+1) omega_coriolis 설정 시 — Strang splitting (코리올리 회전 + 에너지 정확 보존):
+    a = -∇V(x) + ωJv  (코리올리형 자전)
+    순서:
+      half kick:      v₁ = v + (dt/2) g(x)           g = -∇V
+      exact rotation: v₂ = R(ωdt) v₁                  |v| 정확 보존
+      stream:         x_new = x + dt v₂
+      half kick:      v_new = v₂ + (dt/2) g(x_new)
 
-표준 API:
-- update(state: GlobalState) -> GlobalState: 상태 업데이트 (필수)
-- get_energy(state: GlobalState) -> float: 에너지 반환 (선택)
-- get_state() -> Dict[str, Any]: 엔진 내부 상태 반환 (선택)
-- reset(): 상태 리셋 (선택)
+    왜 이 방식인가:
+      dv/dt = ωJv 의 정확해는 v(t) = exp(ωJt)v₀ = 회전행렬 × v₀.
+      이를 수치적으로 정확히 적용하면 |v| 보존 → 에너지 보존.
+      Strang splitting은 2차 정확도 + symplectic.
+
+2) omega_coriolis 미설정 — semi-implicit (symplectic) Euler:
+    v_new = v + dt * a(x, v)
+    x_new = x + dt * v_new
 
 Extensions 저장 규약:
 - state.set_extension("potential_field", {...}): 필드 정보 저장
@@ -37,20 +34,15 @@ import numpy as np
 from typing import Callable, Dict, Any, Optional
 import logging
 
-# CONFIG: 모든 하드코딩된 상수는 여기서만 정의
 try:
     from .CONFIG import EPSILON, DT, DEFAULT_ENABLE_LOGGING
 except ImportError:
-    # 독립 실행 시 fallback
     from CONFIG import EPSILON, DT, DEFAULT_ENABLE_LOGGING
 
-# 독립 모듈: BrainCore의 GlobalState와 SelfOrganizingEngine을 import
-# BrainCore가 설치되어 있어야 함
 try:
     from brain_core.global_state import GlobalState
     from brain_core.engine_wrappers import SelfOrganizingEngine
 except ImportError:
-    # 독립 실행을 위한 대체 (선택적)
     try:
         import sys
         from pathlib import Path
@@ -67,166 +59,158 @@ except ImportError:
 
 class PotentialFieldEngine(SelfOrganizingEngine):
     """퍼텐셜 필드 엔진
-    
+
     역할: 퍼텐셜 필드 계산 및 상태 업데이트
-    
-    수학적 배경:
-    - 퍼텐셜: V(x)
-    - 필드(기울기): g(x) = -∇V(x)
-    - 가속도: a = g(x)
-    - 속도 업데이트: v_{t+1} = v_t + dt * a
-    - 위치 업데이트: x_{t+1} = x_t + dt * v_{t+1}
-    - 에너지: E = (1/2) * v^2 + V(x)
-    
-    참고: 위 적분 방식은 semi-implicit (symplectic) Euler 형태이다. 일반 explicit Euler보다 에너지 보존 특성이 우수하다.
-    
-    설계 원칙:
-    - 불변성 유지: state를 직접 수정하지 않고 copy-and-return
-    - 하드코딩 제거: 모든 상수를 파라미터로 받음
-    - BrainCore 철학: GlobalState 하나, extensions 활용
+    설계 원칙: 불변성 유지 (copy-and-return), 하드코딩 제거, BrainCore GlobalState 활용
     """
-    
+
     def __init__(
         self,
         potential_func: Callable[[np.ndarray], float],
         field_func: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        rotational_func: Optional[Callable] = None,
+        omega_coriolis: Optional[float] = None,
+        rotation_axis: tuple = (0, 1),
         dt: float = None,
         epsilon: float = None,
         enable_logging: bool = None,
     ):
-        """PotentialFieldEngine 초기화
-        
-        설계 원칙:
-        - 하드코딩 금지: 모든 기본값은 CONFIG에서 가져옴
-        - 외부 제어 가능: 파라미터로 오버라이드 가능
-        - 성능 최적화: field_func가 있으면 해석적 기울기 사용, 없으면 수치 미분
-        
+        """
         Args:
-            potential_func: 퍼텐셜 함수 V(x) -> float
-            field_func: 필드 함수 g(x) -> np.ndarray (Optional, 있으면 해석적 기울기 사용)
-            dt: 시간 스텝 (None이면 CONFIG.DT 사용)
-            epsilon: 수치 기울기 계산용 작은 값 (None이면 CONFIG.EPSILON 사용, field_func가 없을 때만 사용)
-            enable_logging: 로깅 활성화 여부 (None이면 CONFIG.DEFAULT_ENABLE_LOGGING 사용)
+            potential_func: V(x) -> float
+            field_func: g(x) = -∇V(x) -> np.ndarray (없으면 수치 미분)
+            rotational_func: 범용 회전 항 (fallback, symplectic Euler에서만 사용)
+            omega_coriolis: 코리올리 각속도 ω (설정 시 Strang splitting 사용)
+            rotation_axis: 회전 평면 축 인덱스 (기본 (0,1) = xy)
+            dt: 시간 스텝
+            epsilon: 수치 기울기용 ε
+            enable_logging: 로깅
         """
         self.potential_func = potential_func
-        self.field_func = field_func  # 해석적 필드 함수 (Optional)
-        # CONFIG에서 기본값 가져오기 (하드코딩 금지)
+        self.field_func = field_func
+        self.rotational_func = rotational_func
+        self.omega_coriolis = omega_coriolis
+        self.rotation_axis = rotation_axis
         self.dt = dt if dt is not None else DT
         self.epsilon = epsilon if epsilon is not None else EPSILON
         self.enable_logging = enable_logging if enable_logging is not None else DEFAULT_ENABLE_LOGGING
-        
+
         if enable_logging:
             self.logger = logging.getLogger("PotentialFieldEngine")
         else:
             self.logger = None
-    
+
+    # ------------------------------------------------------------------ #
+    #  update
+    # ------------------------------------------------------------------ #
     def update(self, state: GlobalState) -> GlobalState:
-        """필드 계산 및 상태 업데이트
-        
-        핵심 원칙:
-        - state를 직접 수정하지 않음
-        - new_state = state.copy() 후 업데이트
-        - new_state 반환
-        
-        수식:
-        - 퍼텐셜 계산: V = potential_func(x)
-        - 필드 계산: g = -∇V(x)
-        - 가속도: a = g
-        - 속도 업데이트: v_{t+1} = v_t + dt * a
-        - 위치 업데이트: x_{t+1} = x_t + dt * v_{t+1}
-        - 에너지: E = (1/2) * v^2 + V(x)
-        
-        참고: 위 적분 방식은 semi-implicit (symplectic) Euler 형태이다. 일반 explicit Euler보다 에너지 보존 특성이 우수하다.
-        
-        Args:
-            state: 현재 상태
-            
-        Returns:
-            업데이트된 상태 (새로운 GlobalState 인스턴스)
-        """
-        # 상태 복사 (불변성 유지)
+        """상태 업데이트 (메인 루프에서 매 스텝 호출)"""
         new_state = state.copy(deep=False)
-        
-        # state_vector 차원 규약 강제: 항상 [x, v] 쌍이어야 함 (짝수 길이)
-        # 규약: state_vector = [x1, x2, ..., xN, v1, v2, ..., vN]
+
         n = len(new_state.state_vector)
         if n % 2 != 0:
             raise ValueError(
                 f"state_vector must have even length (got {n}). "
-                f"Expected format: [x1, ..., xN, v1, ..., vN] where N = {n//2}"
+                f"Expected format: [x1, ..., xN, v1, ..., vN]"
             )
-        
+
         dim = n // 2
-        x = new_state.state_vector[:dim]  # 위치
-        v = new_state.state_vector[dim:]   # 속도
-        
-        # 퍼텐셜 계산
-        V = self.potential_func(x)
-        
-        # 필드 계산 (기울기)
-        g = self._compute_field(x)
-        
-        # 가속도
-        a = g
-        
-        # 속도 업데이트
-        # 수식: v_{t+1} = v_t + dt * a
-        v_new = v + self.dt * a
-        
-        # 위치 업데이트
-        # 수식: x_{t+1} = x_t + dt * v_{t+1}
-        x_new = x + self.dt * v_new
-        
-        # 상태 벡터 업데이트
+        x = new_state.state_vector[:dim]
+        v = new_state.state_vector[dim:]
+
+        if self.omega_coriolis is not None:
+            x_new, v_new = self._strang_splitting_step(x, v)
+        else:
+            x_new, v_new = self._symplectic_euler_step(x, v)
+
+        V_new = self.potential_func(x_new)
+        K_new = 0.5 * np.dot(v_new, v_new)
+
         new_state.state_vector = np.concatenate([x_new, v_new])
-        
-        # 에너지 계산 (운동 에너지 + 퍼텐셜 에너지)
-        # 수식: E = (1/2) * v^2 + V(x)
-        kinetic_energy = 0.5 * np.dot(v_new, v_new)
-        new_state.energy = kinetic_energy + V
-        
-        # 필드 정보 저장 (extensions)
+        new_state.energy = K_new + V_new
+
+        g_new = self._compute_gradient(x_new)
         new_state.set_extension("potential_field", {
-            "potential": float(V),
-            "field": g.tolist() if isinstance(g, np.ndarray) else g,
-            "acceleration": a.tolist() if isinstance(a, np.ndarray) else a,
-            "kinetic_energy": float(kinetic_energy),
-            "potential_energy": float(V),
-            "total_energy": float(kinetic_energy + V),
+            "potential": float(V_new),
+            "field": g_new.tolist() if isinstance(g_new, np.ndarray) else g_new,
+            "kinetic_energy": float(K_new),
+            "potential_energy": float(V_new),
+            "total_energy": float(K_new + V_new),
         })
-        
+
         if self.logger:
             self.logger.debug(
-                f"PotentialFieldEngine update: "
-                f"V={V:.6f}, E={new_state.energy:.6f}, "
-                f"||g||={np.linalg.norm(g):.6f}"
+                f"PotentialFieldEngine: V={V_new:.6f}, E={K_new + V_new:.6f}, "
+                f"||g||={np.linalg.norm(g_new):.6f}"
             )
-        
+
         return new_state
-    
-    def _compute_field(self, x: np.ndarray) -> np.ndarray:
-        """필드 계산 (기울기)
-        
-        수식: g(x) = -∇V(x)
-        
-        계산 방법:
-        - field_func가 있으면: 해석적 필드 사용 (성능/정확도 우수)
-        - field_func가 없으면: 수치적 기울기 계산 (fallback)
-        
-        수치적 기울기 계산:
-        g_i = (V(x + ε·e_i) - V(x - ε·e_i)) / (2ε)
-        
-        Args:
-            x: 위치 벡터
-            
-        Returns:
-            필드 벡터 (기울기)
+
+    # ------------------------------------------------------------------ #
+    #  적분기
+    # ------------------------------------------------------------------ #
+    def _symplectic_euler_step(self, x, v):
+        """Semi-implicit (symplectic) Euler
+
+        v_new = v + dt * a(x, v)
+        x_new = x + dt * v_new
         """
-        # 해석적 필드 함수가 있으면 사용 (성능/정확도 우수)
+        a = self._compute_acceleration(x, v)
+        v_new = v + self.dt * a
+        x_new = x + self.dt * v_new
+        return x_new, v_new
+
+    def _strang_splitting_step(self, x, v):
+        """Drift-Kick/Rotate-Drift (velocity Verlet + Boris rotation)
+
+        순서:
+            1) half drift:     x_half = x + (dt/2) v
+            2) full kick+rot:  g = -∇V(x_half)
+                               v⁻ = v + (dt/2) g
+                               v_rot = R(ωdt) v⁻     (|v| 정확 보존)
+                               v_new = v_rot + (dt/2) g
+            3) half drift:     x_new = x_half + (dt/2) v_new
+
+        에너지 보존:
+            drift 단계는 위치만 변경 (운동에너지 불변).
+            kick은 대칭 (양쪽 dt/2, 같은 위치 x_half).
+            rotation은 |v| 정확 보존.
+            → secular drift 없음, 2차 정확도.
+        """
+        dt = self.dt
+
+        x_half = x + (dt / 2.0) * v
+
+        g = self._compute_gradient(x_half)
+        v_minus = v + (dt / 2.0) * g
+        v_rot = self._exact_rotate(v_minus, self.omega_coriolis * dt)
+        v_new = v_rot + (dt / 2.0) * g
+
+        x_new = x_half + (dt / 2.0) * v_new
+
+        return x_new, v_new
+
+    def _exact_rotate(self, v, theta):
+        """회전 평면 (i,j) 에서 v를 각도 θ 만큼 정확히 회전
+
+        exp(θJ) v   where J[i,j]=-1, J[j,i]=1
+        나머지 차원 불변. |v| 정확 보존.
+        """
+        v_rot = v.copy()
+        i, j = self.rotation_axis
+        c, s = np.cos(theta), np.sin(theta)
+        vi, vj = v[i], v[j]
+        v_rot[i] = c * vi - s * vj
+        v_rot[j] = s * vi + c * vj
+        return v_rot
+
+    # ------------------------------------------------------------------ #
+    #  필드 계산
+    # ------------------------------------------------------------------ #
+    def _compute_gradient(self, x):
+        """순수 gradient 계산: g(x) = -∇V(x)"""
         if self.field_func is not None:
             return self.field_func(x)
-        
-        # 수치적 기울기 계산 (fallback)
         grad = np.zeros_like(x)
         for i in range(len(x)):
             x_plus = x.copy()
@@ -234,28 +218,36 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             x_minus = x.copy()
             x_minus[i] -= self.epsilon
             grad[i] = (self.potential_func(x_plus) - self.potential_func(x_minus)) / (2 * self.epsilon)
-        return -grad  # g = -∇V
-    
+        return -grad
+
+    def _compute_acceleration(self, x, v):
+        """전체 가속도: gradient + 회전 항 (symplectic Euler용)"""
+        g = self._compute_gradient(x)
+        if self.rotational_func is not None:
+            try:
+                r = self.rotational_func(x, v)
+            except TypeError:
+                r = self.rotational_func(x)
+            if len(g) != len(r):
+                raise ValueError(
+                    f"field and rotational dimension mismatch: {len(g)} vs {len(r)}"
+                )
+            g = g + r
+        return g
+
+    # ------------------------------------------------------------------ #
+    #  유틸리티
+    # ------------------------------------------------------------------ #
     def get_energy(self, state: GlobalState) -> float:
-        """상태의 에너지 반환
-        
-        Args:
-            state: 상태
-            
-        Returns:
-            에너지
-        """
         return state.energy
-    
+
     def get_state(self) -> Dict[str, Any]:
-        """엔진 내부 상태 반환"""
         return {
             "name": "potential_field",
             "dt": self.dt,
             "epsilon": self.epsilon,
+            "omega_coriolis": self.omega_coriolis,
         }
-    
-    def reset(self):
-        """상태 리셋"""
-        pass
 
+    def reset(self):
+        pass
