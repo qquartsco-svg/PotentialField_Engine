@@ -23,21 +23,21 @@
     O(dt/2) → S(dt/2) → K(dt/2) → R(dt) → K(dt/2) → S(dt/2) → O(dt/2)
 
     여기서:
-      O: 감쇠 + 노이즈 (Ornstein-Uhlenbeck 반스텝)
-         v *= exp(-γ·dt/2)
-         v += σ·√(dt/2)·ξ     ← Wiener increment
+      O: O-U exact 반스텝 (감쇠 + 노이즈 결합)
+         v = e^{-γh} v + σ√((1-e^{-2γh})/(2γ)) · ξ,  h=dt/2
+         γ→0 limit: v = v + σ√h · ξ
       S: 드리프트 x += (dt/2)·v
       K: 킥 v += (dt/2)·(g(x) + I)
       R: 정확 회전 v = R(ωdt)·v  — |v| 보존
 
     γ=0, σ=0, I=0이면 기존 Strang splitting과 동일 (하위 호환).
     대칭 분할 → 결정론 부분 2차 정확도 유지.
-    노이즈: Euler-Maruyama 이산화 (√dt 스케일링).
 
-2) omega_coriolis 미설정 — semi-implicit Euler + noise:
+2) omega_coriolis 미설정 — semi-implicit Euler + O-U exact noise:
     a = -∇V(x) + rotational(x,v) + I(x,v,t)
-    v_new = (v + dt·a) · exp(-γ·dt) + σ·√dt·ξ
+    v_new = e^{-γdt}(v + dt·a) + amp(dt)·ξ
     x_new = x + dt·v_new
+    amp(dt) = σ√((1-e^{-2γdt})/(2γ)),  γ→0: σ√dt
 
 Extensions 저장 규약:
 - state.set_extension("potential_field", {...}): 필드/에너지/감쇠/주입/노이즈 정보
@@ -199,11 +199,14 @@ class PotentialFieldEngine(SelfOrganizingEngine):
     #  적분기
     # ------------------------------------------------------------------ #
     def _symplectic_euler_step(self, x, v):
-        """Semi-implicit Euler + exponential dissipation + noise
+        """Semi-implicit Euler + O-U exact noise
 
         a = -∇V(x) + rotational(x,v) + I(x,v,t)
-        v_new = (v + dt·a) · exp(-γ·dt) + σ·√dt·ξ
+        v_tmp = v + dt·a
+        v_new = e^{-γdt} v_tmp + amp(dt)·ξ
         x_new = x + dt·v_new
+
+        amp(dt) = σ √((1 - e^{-2γdt}) / (2γ)),  γ→0: σ√dt
         """
         a = self._compute_acceleration(x, v)
         if self.injection_func is not None:
@@ -212,10 +215,11 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             )
             a = a + I_vec
         v_new = v + self.dt * a
-        if self.gamma > 0:
-            v_new = v_new * np.exp(-self.gamma * self.dt)
-        if self.noise_sigma > 0:
-            v_new = v_new + self.noise_sigma * np.sqrt(self.dt) * self._rng.standard_normal(v_new.shape)
+        decay = np.exp(-self.gamma * self.dt) if self.gamma > 0 else 1.0
+        v_new = v_new * decay
+        noise_amp = self._ou_noise_amplitude(self.dt)
+        if noise_amp > 0:
+            v_new = v_new + noise_amp * self._rng.standard_normal(v_new.shape)
         x_new = x + self.dt * v_new
         return x_new, v_new
 
@@ -225,33 +229,31 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         ẍ = g(x) + ωJv - γv + I(x,v,t) + σξ(t)
 
         순서 (대칭 분할):
-            1) half O-U:  v *= exp(-γ·dt/2),  v += σ·√(dt/2)·ξ₁
+            1) half O-U exact:   v = e^{-γdt/2} v + amp(dt/2)·ξ₁
             2) half drift:       x_half = x + (dt/2)v
             3) force at midpoint: F = g(x_half) + I(x_half, v, t_mid)
             4) half kick:        v⁻ = v + (dt/2)·F
             5) exact rotation:   v_rot = R(ωdt)·v⁻    — |v| 정확 보존
             6) half kick:        v_new = v_rot + (dt/2)·F
             7) half drift:       x_new = x_half + (dt/2)·v_new
-            8) half O-U:  v_new *= exp(-γ·dt/2),  v_new += σ·√(dt/2)·ξ₂
+            8) half O-U exact:   v_new = e^{-γdt/2} v_new + amp(dt/2)·ξ₂
+
+        O-U exact noise amplitude for half-step h = dt/2:
+            amp(h) = σ √((1 - e^{-2γh}) / (2γ))
+            γ→0 limit: amp(h) = σ √h
 
         γ=0, σ=0, I=None이면 기존 Strang splitting과 동일 (하위 호환).
-
-        에너지 밸런스:
-            보존 부분 (g, ωJv): drift/kick/rotation 대칭 → secular drift 없음
-            비보존 부분 (-γv):  exp 정확해 → 무조건 안정
-            주입 (I):          kick에 포함 → 2차 정확도
-            노이즈 (σξ):       대칭 O-U 반스텝, Wiener √dt 스케일링
         """
         dt = self.dt
         gamma = self.gamma
-        sigma = self.noise_sigma
 
-        # (1) Half O-U: dissipation + noise
-        if gamma > 0:
-            decay_half = np.exp(-gamma * dt / 2.0)
-            v = v * decay_half
-        if sigma > 0:
-            v = v + sigma * np.sqrt(dt / 2.0) * self._rng.standard_normal(v.shape)
+        noise_amp_half = self._ou_noise_amplitude(dt / 2.0)
+        decay_half = np.exp(-gamma * dt / 2.0) if gamma > 0 else 1.0
+
+        # (1) Half O-U exact
+        v = v * decay_half
+        if noise_amp_half > 0:
+            v = v + noise_amp_half * self._rng.standard_normal(v.shape)
 
         # (2) Half drift
         x_half = x + (dt / 2.0) * v
@@ -271,13 +273,28 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         # (7) Half drift
         x_new = x_half + (dt / 2.0) * v_new
 
-        # (8) Half O-U: dissipation + noise
-        if gamma > 0:
-            v_new = v_new * decay_half
-        if sigma > 0:
-            v_new = v_new + sigma * np.sqrt(dt / 2.0) * self._rng.standard_normal(v_new.shape)
+        # (8) Half O-U exact
+        v_new = v_new * decay_half
+        if noise_amp_half > 0:
+            v_new = v_new + noise_amp_half * self._rng.standard_normal(v_new.shape)
 
         return x_new, v_new
+
+    def _ou_noise_amplitude(self, h):
+        """O-U exact noise coefficient for time step h.
+
+        dv = -γv dt + σ dW  →  v(t+h) = e^{-γh} v(t) + amp · ξ
+
+        amp = σ √((1 - e^{-2γh}) / (2γ))
+        γ→0 limit: amp = σ √h
+        """
+        if self.noise_sigma <= 0:
+            return 0.0
+        if self.gamma > 0:
+            return self.noise_sigma * np.sqrt(
+                (1.0 - np.exp(-2.0 * self.gamma * h)) / (2.0 * self.gamma)
+            )
+        return self.noise_sigma * np.sqrt(h)
 
     def _exact_rotate(self, v, theta):
         """회전 평면 (i,j) 에서 v를 각도 θ 만큼 정확히 회전
