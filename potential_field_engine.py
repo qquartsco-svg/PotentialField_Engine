@@ -2,32 +2,41 @@
 
 퍼텐셜 필드 엔진: 퍼텐셜 필드를 계산하고 상태를 업데이트합니다.
 
-수식:
-- 퍼텐셜: V(x)
-- 필드(기울기): g(x) = -∇V(x)
-- 에너지: E = (1/2)||v||² + V(x)
+수식 (일반):
+  ẍ = -∇V(x) + ωJv - γv + I(x,v,t)
 
-적분 방식 (두 가지):
+  각 항의 역할:
+    -∇V(x)   : 퍼텐셜 gradient (보존력)
+    ωJv       : 코리올리 회전 (에너지 보존, 방향만 변경)
+    -γv       : 감쇠 (에너지 소산, γ>0 → 망각/피로)
+    I(x,v,t)  : 외부 주입 (에너지 공급, 자극/각성)
 
-1) omega_coriolis 설정 시 — Strang splitting (코리올리 회전 + 에너지 정확 보존):
-    a = -∇V(x) + ωJv  (코리올리형 자전)
-    순서:
-      half kick:      v₁ = v + (dt/2) g(x)           g = -∇V
-      exact rotation: v₂ = R(ωdt) v₁                  |v| 정확 보존
-      stream:         x_new = x + dt v₂
-      half kick:      v_new = v₂ + (dt/2) g(x_new)
+  에너지 밸런스:
+    E = ½||v||² + V(x)
+    dE/dt = -γ||v||² + v·I(x,v,t)
+    γ=0, I=0 → 에너지 보존 (이전 버전과 동일)
 
-    왜 이 방식인가:
-      dv/dt = ωJv 의 정확해는 v(t) = exp(ωJt)v₀ = 회전행렬 × v₀.
-      이를 수치적으로 정확히 적용하면 |v| 보존 → 에너지 보존.
-      Strang splitting은 2차 정확도 + symplectic.
+적분 방식:
 
-2) omega_coriolis 미설정 — semi-implicit (symplectic) Euler:
-    v_new = v + dt * a(x, v)
-    x_new = x + dt * v_new
+1) omega_coriolis 설정 시 — Modified Strang splitting:
+    D(dt/2) → S(dt/2) → K(dt/2) → R(dt) → K(dt/2) → S(dt/2) → D(dt/2)
+
+    여기서:
+      D: 감쇠 v *= exp(-γ·dt/2)  — dv/dt = -γv 정확해
+      S: 드리프트 x += (dt/2)·v
+      K: 킥 v += (dt/2)·(g(x) + I)
+      R: 정확 회전 v = R(ωdt)·v  — |v| 보존
+
+    γ=0, I=0이면 기존 Strang splitting과 동일 (하위 호환).
+    대칭 분할 → 2차 정확도 유지.
+
+2) omega_coriolis 미설정 — semi-implicit Euler + exponential dissipation:
+    a = -∇V(x) + rotational(x,v) + I(x,v,t)
+    v_new = (v + dt·a) · exp(-γ·dt)
+    x_new = x + dt·v_new
 
 Extensions 저장 규약:
-- state.set_extension("potential_field", {...}): 필드 정보 저장
+- state.set_extension("potential_field", {...}): 필드/에너지/감쇠/주입 정보
 """
 
 import numpy as np
@@ -71,6 +80,8 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         rotational_func: Optional[Callable] = None,
         omega_coriolis: Optional[float] = None,
         rotation_axis: tuple = (0, 1),
+        gamma: float = 0.0,
+        injection_func: Optional[Callable] = None,
         dt: float = None,
         epsilon: float = None,
         enable_logging: bool = None,
@@ -82,6 +93,12 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             rotational_func: 범용 회전 항 (fallback, symplectic Euler에서만 사용)
             omega_coriolis: 코리올리 각속도 ω (설정 시 Strang splitting 사용)
             rotation_axis: 회전 평면 축 인덱스 (기본 (0,1) = xy)
+            gamma: 감쇠 계수 γ ≥ 0. 운동 방정식에 -γv 항 추가.
+                   γ=0이면 감쇠 없음 (기존 동작). γ>0이면 에너지 소산.
+                   정확해 exp(-γt) 적용 (수치적으로 무조건 안정).
+            injection_func: 외부 입력 I(x, v, t) -> np.ndarray.
+                   상태 공간과 같은 차원의 힘 벡터 반환.
+                   None이면 외부 입력 없음.
             dt: 시간 스텝
             epsilon: 수치 기울기용 ε
             enable_logging: 로깅
@@ -91,9 +108,12 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         self.rotational_func = rotational_func
         self.omega_coriolis = omega_coriolis
         self.rotation_axis = rotation_axis
+        self.gamma = float(gamma)
+        self.injection_func = injection_func
         self.dt = dt if dt is not None else DT
         self.epsilon = epsilon if epsilon is not None else EPSILON
         self.enable_logging = enable_logging if enable_logging is not None else DEFAULT_ENABLE_LOGGING
+        self._time = 0.0
 
         if enable_logging:
             self.logger = logging.getLogger("PotentialFieldEngine")
@@ -123,11 +143,22 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         else:
             x_new, v_new = self._symplectic_euler_step(x, v)
 
+        self._time += self.dt
+
         V_new = self.potential_func(x_new)
         K_new = 0.5 * np.dot(v_new, v_new)
 
         new_state.state_vector = np.concatenate([x_new, v_new])
         new_state.energy = K_new + V_new
+
+        # 에너지 밸런스: dE/dt = -γ||v||² + v·I
+        dissipation_power = -self.gamma * np.dot(v_new, v_new)
+        injection_power = 0.0
+        if self.injection_func is not None:
+            I_vec = np.asarray(
+                self.injection_func(x_new, v_new, self._time)
+            )
+            injection_power = float(np.dot(v_new, I_vec))
 
         g_new = self._compute_gradient(x_new)
         new_state.set_extension("potential_field", {
@@ -136,12 +167,16 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             "kinetic_energy": float(K_new),
             "potential_energy": float(V_new),
             "total_energy": float(K_new + V_new),
+            "time": float(self._time),
+            "gamma": float(self.gamma),
+            "dissipation_power": float(dissipation_power),
+            "injection_power": float(injection_power),
         })
 
         if self.logger:
             self.logger.debug(
                 f"PotentialFieldEngine: V={V_new:.6f}, E={K_new + V_new:.6f}, "
-                f"||g||={np.linalg.norm(g_new):.6f}"
+                f"γ={self.gamma}, P_diss={dissipation_power:.6f}"
             )
 
         return new_state
@@ -150,43 +185,77 @@ class PotentialFieldEngine(SelfOrganizingEngine):
     #  적분기
     # ------------------------------------------------------------------ #
     def _symplectic_euler_step(self, x, v):
-        """Semi-implicit (symplectic) Euler
+        """Semi-implicit Euler + exponential dissipation
 
-        v_new = v + dt * a(x, v)
-        x_new = x + dt * v_new
+        a = -∇V(x) + rotational(x,v) + I(x,v,t)
+        v_new = (v + dt·a) · exp(-γ·dt)
+        x_new = x + dt·v_new
+
+        감쇠는 exp 정확해로 적용 (수치적 안정성).
         """
         a = self._compute_acceleration(x, v)
+        if self.injection_func is not None:
+            I_vec = np.asarray(
+                self.injection_func(x, v, self._time)
+            )
+            a = a + I_vec
         v_new = v + self.dt * a
+        if self.gamma > 0:
+            v_new = v_new * np.exp(-self.gamma * self.dt)
         x_new = x + self.dt * v_new
         return x_new, v_new
 
     def _strang_splitting_step(self, x, v):
-        """Drift-Kick/Rotate-Drift (velocity Verlet + Boris rotation)
+        """Modified Strang splitting: D-S-K-R-K-S-D
 
-        순서:
-            1) half drift:     x_half = x + (dt/2) v
-            2) full kick+rot:  g = -∇V(x_half)
-                               v⁻ = v + (dt/2) g
-                               v_rot = R(ωdt) v⁻     (|v| 정확 보존)
-                               v_new = v_rot + (dt/2) g
-            3) half drift:     x_new = x_half + (dt/2) v_new
+        ẍ = g(x) + ωJv - γv + I(x,v,t)
 
-        에너지 보존:
-            drift 단계는 위치만 변경 (운동에너지 불변).
-            kick은 대칭 (양쪽 dt/2, 같은 위치 x_half).
-            rotation은 |v| 정확 보존.
-            → secular drift 없음, 2차 정확도.
+        순서 (대칭 분할, 2차 정확도):
+            1) half dissipation: v *= exp(-γ·dt/2)    — dv/dt=-γv 정확해
+            2) half drift:       x_half = x + (dt/2)v
+            3) force at midpoint: F = g(x_half) + I(x_half, v, t_mid)
+            4) half kick:        v⁻ = v + (dt/2)·F
+            5) exact rotation:   v_rot = R(ωdt)·v⁻    — |v| 정확 보존
+            6) half kick:        v_new = v_rot + (dt/2)·F
+            7) half drift:       x_new = x_half + (dt/2)·v_new
+            8) half dissipation: v_new *= exp(-γ·dt/2)
+
+        γ=0, I=None이면 기존 Strang splitting과 동일 (하위 호환).
+
+        에너지 밸런스:
+            보존 부분 (g, ωJv): drift/kick/rotation 대칭 → secular drift 없음
+            비보존 부분 (-γv):  exp 정확해 → 무조건 안정, 해석적
+            주입 (I):          kick에 포함 → 2차 정확도
         """
         dt = self.dt
+        gamma = self.gamma
 
+        # (1) Half dissipation
+        if gamma > 0:
+            decay_half = np.exp(-gamma * dt / 2.0)
+            v = v * decay_half
+
+        # (2) Half drift
         x_half = x + (dt / 2.0) * v
 
-        g = self._compute_gradient(x_half)
-        v_minus = v + (dt / 2.0) * g
-        v_rot = self._exact_rotate(v_minus, self.omega_coriolis * dt)
-        v_new = v_rot + (dt / 2.0) * g
+        # (3) Force at midpoint: gradient + injection
+        force = self._compute_gradient(x_half)
+        if self.injection_func is not None:
+            t_mid = self._time + dt / 2.0
+            I_vec = np.asarray(self.injection_func(x_half, v, t_mid))
+            force = force + I_vec
 
+        # (4)-(6) Half kick → rotation → half kick
+        v_minus = v + (dt / 2.0) * force
+        v_rot = self._exact_rotate(v_minus, self.omega_coriolis * dt)
+        v_new = v_rot + (dt / 2.0) * force
+
+        # (7) Half drift
         x_new = x_half + (dt / 2.0) * v_new
+
+        # (8) Half dissipation
+        if gamma > 0:
+            v_new = v_new * decay_half
 
         return x_new, v_new
 
@@ -247,7 +316,10 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             "dt": self.dt,
             "epsilon": self.epsilon,
             "omega_coriolis": self.omega_coriolis,
+            "gamma": self.gamma,
+            "has_injection": self.injection_func is not None,
+            "time": self._time,
         }
 
     def reset(self):
-        pass
+        self._time = 0.0
