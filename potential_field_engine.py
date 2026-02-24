@@ -1,61 +1,79 @@
-"""Potential Field Engine
+"""Potential Field Engine — Trunk
 
-퍼텐셜 필드 엔진: 퍼텐셜 필드를 계산하고 상태를 업데이트합니다.
+줄기(trunk): 레이어를 받아서 적분하는 물리 엔진.
 
 수식 (일반):
-  m ẍ = -∇V(x) + ωJv - γv + I(x,v,t) + σξ(t)
+  m ẍ = Σ F_i(x,v,t) + G(v,dt) - γv + σξ(t)
 
-  각 항의 역할:
-    -∇V(x)   : 퍼텐셜 gradient (보존력)
-    ωJv       : 코리올리 회전 (에너지 보존, 방향만 변경)
-    -γv       : 감쇠 (에너지 소산, γ>0 → 망각/피로)
-    I(x,v,t)  : 외부 주입 (에너지 공급, 자극/각성)
-    σξ(t)     : 확률적 요동 (Langevin noise, 비결정론적 전이)
+  여기서:
+    F_i    : Force Layers (보존력, 비보존력, 상호작용 등)
+    G(v,dt): Gauge Layer  (코리올리, 게이지 회전 등 — |v| 보존)
+    -γv    : Thermo Layer (소산)
+    σξ(t)  : Thermo Layer (요동)
 
-  요동-소산 정리 (Fluctuation-Dissipation Theorem):
-    σ² = 2γkT/m  (kB=1 자연단위)
-    temperature 설정 시 σ가 γ, T, m으로부터 자동 결정.
-    정상 분포: P(x,v) ∝ exp(-E/T),  E = ½m||v||² + V(x)
+  줄기가 고정하는 것 (물리의 뼈대):
+    1. 상태공간: (x, v, t) — 확장 가능한 벡터
+    2. 업데이트: 힘 → 가속도 → 속도/위치 (Newton 구조)
+    3. 보존/소산/요동 분리 (Strang splitting)
+    4. 극한 일관성:
+       - σ→0 → 결정론계
+       - γ→0 → 보존/준보존 극한
+       - (I=0, FDT) → Boltzmann 정상 분포
+       - N→∞ → 동일 인터페이스
 
-  에너지 밸런스 (결정론 부분):
-    E = ½||v||² + V(x)
-    dE/dt = -γ||v||² + v·I(x,v,t)  (+ 노이즈로 인한 확률적 기여)
-    γ=0, I=0, σ=0 → 에너지 보존
+  줄기가 고정하지 않는 것 (레이어에서 교체):
+    - 특정 퍼텐셜 V
+    - 특정 차원
+    - 특정 노이즈 형태
+    - 특정 상호작용
+    - 특정 인지 해석
 
 적분 방식:
 
-1) omega_coriolis 설정 시 — Modified Strang splitting:
+  Strang splitting (gauge 있을 때):
     O(dt/2) → S(dt/2) → K(dt/2) → R(dt) → K(dt/2) → S(dt/2) → O(dt/2)
 
-    여기서:
-      O: O-U exact 반스텝 (감쇠 + 노이즈 결합)
-         v = e^{-γh} v + σ√((1-e^{-2γh})/(2γ)) · ξ,  h=dt/2
-         γ→0 limit: v = v + σ√h · ξ
-      S: 드리프트 x += (dt/2)·v
-      K: 킥 v += (dt/2)·(g(x) + I)
-      R: 정확 회전 v = R(ωdt)·v  — |v| 보존
+    O: Thermo Layer — O-U exact 반스텝
+    S: drift — x += (dt/2)·v
+    K: kick  — v += (dt/2)·Σ F_i(x,v,t)
+    R: Gauge Layer — 정확 회전
 
-    γ=0, σ=0, I=0이면 기존 Strang splitting과 동일 (하위 호환).
-    대칭 분할 → 결정론 부분 2차 정확도 유지.
-
-2) omega_coriolis 미설정 — semi-implicit Euler + O-U exact noise:
-    a = -∇V(x) + rotational(x,v) + I(x,v,t)
-    v_new = e^{-γdt}(v + dt·a) + amp(dt)·ξ
+  Semi-implicit Euler (gauge 없을 때, 하위 호환):
+    a = Σ F_i(x,v,t)
+    v_new = Thermo(v + dt·a, dt)
     x_new = x + dt·v_new
-    amp(dt) = σ√((1-e^{-2γdt})/(2γ)),  γ→0: σ√dt
+
+하위 호환:
+  기존 API (potential_func, omega_coriolis, gamma 등) 100% 유지.
+  내부에서 자동으로 레이어 객체로 변환.
 
 Extensions 저장 규약:
-- state.set_extension("potential_field", {...}): 필드/에너지/감쇠/주입/노이즈 정보
+  state.set_extension("potential_field", {...})
 """
 
 import numpy as np
-from typing import Callable, Dict, Any, Optional
+from typing import Callable, Dict, Any, Optional, List
 import logging
 
 try:
     from .CONFIG import EPSILON, DT, DEFAULT_ENABLE_LOGGING
 except ImportError:
     from CONFIG import EPSILON, DT, DEFAULT_ENABLE_LOGGING
+
+try:
+    from .layers import (
+        GradientForce, InjectionForce, CallbackForce,
+        CoriolisGauge, NullGauge,
+        LangevinThermo, NullThermo,
+        TrunkChecker,
+    )
+except ImportError:
+    from layers import (
+        GradientForce, InjectionForce, CallbackForce,
+        CoriolisGauge, NullGauge,
+        LangevinThermo, NullThermo,
+        TrunkChecker,
+    )
 
 try:
     from brain_core.global_state import GlobalState
@@ -76,15 +94,33 @@ except ImportError:
 
 
 class PotentialFieldEngine(SelfOrganizingEngine):
-    """퍼텐셜 필드 엔진
+    """줄기(trunk) 엔진 — 레이어를 받아서 적분한다.
 
-    역할: 퍼텐셜 필드 계산 및 상태 업데이트
-    설계 원칙: 불변성 유지 (copy-and-return), 하드코딩 제거, BrainCore GlobalState 활용
+    두 가지 API:
+
+    1) Classic API (하위 호환):
+        eng = PotentialFieldEngine(
+            potential_func=V, field_func=g,
+            omega_coriolis=0.3, gamma=0.5,
+            temperature=1.0, mass=1.0,
+            noise_seed=42, dt=0.01,
+        )
+
+    2) Layer API (확장용):
+        eng = PotentialFieldEngine(
+            force_layers=[GradientForce(V, g), InjectionForce(I_func)],
+            gauge_layer=CoriolisGauge(omega=0.3),
+            thermo_layer=LangevinThermo(gamma=0.5, temperature=1.0),
+            noise_seed=42, dt=0.01,
+        )
+
+    내부에서는 모두 레이어 객체로 통합 처리된다.
     """
 
     def __init__(
         self,
-        potential_func: Callable[[np.ndarray], float],
+        # --- Classic API (하위 호환) ---
+        potential_func: Optional[Callable[[np.ndarray], float]] = None,
         field_func: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         rotational_func: Optional[Callable] = None,
         omega_coriolis: Optional[float] = None,
@@ -94,76 +130,120 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         noise_sigma: float = 0.0,
         temperature: Optional[float] = None,
         mass: float = 1.0,
+        # --- Layer API (확장용) ---
+        force_layers: Optional[List] = None,
+        gauge_layer=None,
+        thermo_layer=None,
+        # --- Common ---
         noise_seed: Optional[int] = None,
         dt: float = None,
         epsilon: float = None,
         enable_logging: bool = None,
     ):
-        """
-        Args:
-            potential_func: V(x) -> float
-            field_func: g(x) = -∇V(x) -> np.ndarray (없으면 수치 미분)
-            rotational_func: 범용 회전 항 (fallback, symplectic Euler에서만 사용)
-            omega_coriolis: 코리올리 각속도 ω (설정 시 Strang splitting 사용)
-            rotation_axis: 회전 평면 축 인덱스 (기본 (0,1) = xy)
-            gamma: 감쇠 계수 γ ≥ 0. -γv 항 추가.
-            injection_func: 외부 입력 I(x, v, t) -> np.ndarray. None이면 없음.
-            noise_sigma: 직접 지정 노이즈 세기 σ. 0보다 크면 FDT 무시.
-            temperature: 시스템 온도 T (kB=1). 설정 시 FDT로 σ 자동 계산.
-                   σ² = 2γT/m. γ=0이면 σ=0 (FDT 요구).
-                   noise_sigma와 동시 사용 시 noise_sigma가 우선 (override).
-            mass: 입자 질량 m > 0. FDT 계산에 사용. 기본 1.0.
-            noise_seed: 난수 시드. None이면 비결정적.
-            dt: 시간 스텝
-            epsilon: 수치 기울기용 ε
-            enable_logging: 로깅
-        """
+        self.dt = dt if dt is not None else DT
+        self.epsilon = epsilon if epsilon is not None else EPSILON
+        self.enable_logging = enable_logging if enable_logging is not None else DEFAULT_ENABLE_LOGGING
+        self._rng = np.random.default_rng(noise_seed)
+        self._time = 0.0
+
+        # ----- Build layers ----- #
+        self._build_layers(
+            potential_func=potential_func,
+            field_func=field_func,
+            rotational_func=rotational_func,
+            omega_coriolis=omega_coriolis,
+            rotation_axis=rotation_axis,
+            gamma=gamma,
+            injection_func=injection_func,
+            noise_sigma=noise_sigma,
+            temperature=temperature,
+            mass=mass,
+            force_layers=force_layers,
+            gauge_layer=gauge_layer,
+            thermo_layer=thermo_layer,
+        )
+
+        # ----- Classic API 호환 속성 ----- #
         self.potential_func = potential_func
         self.field_func = field_func
         self.rotational_func = rotational_func
         self.omega_coriolis = omega_coriolis
         self.rotation_axis = rotation_axis
-        self.gamma = float(gamma)
         self.injection_func = injection_func
         self._noise_sigma_override = float(noise_sigma)
-        self.temperature = temperature
-        self.mass = float(mass)
-        self._rng = np.random.default_rng(noise_seed)
-        self.dt = dt if dt is not None else DT
-        self.epsilon = epsilon if epsilon is not None else EPSILON
-        self.enable_logging = enable_logging if enable_logging is not None else DEFAULT_ENABLE_LOGGING
-        self._time = 0.0
 
-        if enable_logging:
+        # ----- Logger ----- #
+        if self.enable_logging:
             self.logger = logging.getLogger("PotentialFieldEngine")
         else:
             self.logger = None
 
+    def _build_layers(self, *, potential_func, field_func, rotational_func,
+                      omega_coriolis, rotation_axis, gamma, injection_func,
+                      noise_sigma, temperature, mass,
+                      force_layers, gauge_layer, thermo_layer):
+        """Classic params → Layer objects 변환.
+
+        Layer API가 주어지면 그것을 우선 사용.
+        Classic API만 주어지면 자동 변환.
+        """
+        # Force layers
+        if force_layers is not None:
+            self._force_layers = list(force_layers)
+        else:
+            self._force_layers = []
+            if potential_func is not None:
+                self._force_layers.append(
+                    GradientForce(potential_func, field_func, self.epsilon)
+                )
+            if injection_func is not None:
+                self._force_layers.append(InjectionForce(injection_func))
+            if rotational_func is not None and omega_coriolis is None:
+                self._force_layers.append(CallbackForce(rotational_func))
+
+        # Gauge layer
+        if gauge_layer is not None:
+            self._gauge = gauge_layer
+        elif omega_coriolis is not None:
+            self._gauge = CoriolisGauge(omega_coriolis, rotation_axis)
+        else:
+            self._gauge = NullGauge()
+
+        # Thermo layer
+        if thermo_layer is not None:
+            self._thermo = thermo_layer
+        else:
+            self._thermo = LangevinThermo(
+                gamma=gamma,
+                temperature=temperature,
+                mass=mass,
+                noise_sigma_override=noise_sigma,
+            )
+
+        self._use_strang = not isinstance(self._gauge, NullGauge)
+
+    # ------------------------------------------------------------------ #
+    #  하위 호환 Properties
+    # ------------------------------------------------------------------ #
+    @property
+    def gamma(self) -> float:
+        return self._thermo.gamma
+
     @property
     def noise_sigma(self) -> float:
-        """Effective σ.
-
-        우선순위:
-          1) noise_sigma > 0 (직접 지정, override) → 그대로 사용
-          2) temperature 설정 + γ > 0 → FDT: σ = √(2γT/m)
-          3) 그 외 → 0 (결정론적)
-        """
-        if self._noise_sigma_override > 0:
-            return self._noise_sigma_override
-        if self.temperature is not None and self.temperature > 0 and self.gamma > 0:
-            return float(np.sqrt(
-                2.0 * self.gamma * self.temperature / self.mass
-            ))
-        return 0.0
+        return self._thermo.sigma
 
     @property
     def noise_mode(self) -> str:
-        """현재 노이즈 모드."""
-        if self._noise_sigma_override > 0:
-            return "manual"
-        if self.temperature is not None and self.temperature > 0 and self.gamma > 0:
-            return "fdt"
-        return "off"
+        return self._thermo.noise_mode
+
+    @property
+    def temperature(self) -> Optional[float]:
+        return self._thermo.temperature
+
+    @property
+    def mass(self) -> float:
+        return self._thermo.mass
 
     # ------------------------------------------------------------------ #
     #  update
@@ -183,29 +263,23 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         x = new_state.state_vector[:dim]
         v = new_state.state_vector[dim:]
 
-        if self.omega_coriolis is not None:
-            x_new, v_new = self._strang_splitting_step(x, v)
+        if self._use_strang:
+            x_new, v_new = self._strang_step(x, v)
         else:
-            x_new, v_new = self._symplectic_euler_step(x, v)
+            x_new, v_new = self._euler_step(x, v)
 
         self._time += self.dt
 
-        V_new = self.potential_func(x_new)
-        K_new = 0.5 * np.dot(v_new, v_new)
+        V_new = self._total_potential(x_new)
+        K_new = 0.5 * self.mass * np.dot(v_new, v_new)
 
         new_state.state_vector = np.concatenate([x_new, v_new])
         new_state.energy = K_new + V_new
 
-        # 에너지 밸런스: dE/dt = -γ||v||² + v·I
         dissipation_power = -self.gamma * np.dot(v_new, v_new)
-        injection_power = 0.0
-        if self.injection_func is not None:
-            I_vec = np.asarray(
-                self.injection_func(x_new, v_new, self._time)
-            )
-            injection_power = float(np.dot(v_new, I_vec))
+        injection_power = self._injection_power(x_new, v_new)
 
-        g_new = self._compute_gradient(x_new)
+        g_new = self._total_force(x_new, v_new, self._time)
         new_state.set_extension("potential_field", {
             "potential": float(V_new),
             "field": g_new.tolist() if isinstance(g_new, np.ndarray) else g_new,
@@ -220,6 +294,9 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             "mass": self.mass,
             "dissipation_power": float(dissipation_power),
             "injection_power": float(injection_power),
+            "n_force_layers": len(self._force_layers),
+            "gauge_type": type(self._gauge).__name__,
+            "thermo_type": type(self._thermo).__name__,
         })
 
         if self.logger:
@@ -233,151 +310,105 @@ class PotentialFieldEngine(SelfOrganizingEngine):
     # ------------------------------------------------------------------ #
     #  적분기
     # ------------------------------------------------------------------ #
-    def _symplectic_euler_step(self, x, v):
-        """Semi-implicit Euler + O-U exact noise
-
-        a = -∇V(x) + rotational(x,v) + I(x,v,t)
-        v_tmp = v + dt·a
-        v_new = e^{-γdt} v_tmp + amp(dt)·ξ
-        x_new = x + dt·v_new
-
-        amp(dt) = σ √((1 - e^{-2γdt}) / (2γ)),  γ→0: σ√dt
-        """
-        a = self._compute_acceleration(x, v)
-        if self.injection_func is not None:
-            I_vec = np.asarray(
-                self.injection_func(x, v, self._time)
-            )
-            a = a + I_vec
-        v_new = v + self.dt * a
-        decay = np.exp(-self.gamma * self.dt) if self.gamma > 0 else 1.0
-        v_new = v_new * decay
-        noise_amp = self._ou_noise_amplitude(self.dt)
-        if noise_amp > 0:
-            v_new = v_new + noise_amp * self._rng.standard_normal(v_new.shape)
-        x_new = x + self.dt * v_new
-        return x_new, v_new
-
-    def _strang_splitting_step(self, x, v):
+    def _strang_step(self, x, v):
         """Modified Strang splitting: O-S-K-R-K-S-O
 
-        ẍ = g(x) + ωJv - γv + I(x,v,t) + σξ(t)
-
-        순서 (대칭 분할):
-            1) half O-U exact:   v = e^{-γdt/2} v + amp(dt/2)·ξ₁
-            2) half drift:       x_half = x + (dt/2)v
-            3) force at midpoint: F = g(x_half) + I(x_half, v, t_mid)
-            4) half kick:        v⁻ = v + (dt/2)·F
-            5) exact rotation:   v_rot = R(ωdt)·v⁻    — |v| 정확 보존
-            6) half kick:        v_new = v_rot + (dt/2)·F
-            7) half drift:       x_new = x_half + (dt/2)·v_new
-            8) half O-U exact:   v_new = e^{-γdt/2} v_new + amp(dt/2)·ξ₂
-
-        O-U exact noise amplitude for half-step h = dt/2:
-            amp(h) = σ √((1 - e^{-2γh}) / (2γ))
-            γ→0 limit: amp(h) = σ √h
-
-        γ=0, σ=0, I=None이면 기존 Strang splitting과 동일 (하위 호환).
+        O: Thermo Layer (O-U exact 반스텝)
+        S: drift        (x += h·v)
+        K: kick         (v += h·Σ F_i)
+        R: Gauge Layer  (정확 회전)
         """
         dt = self.dt
-        gamma = self.gamma
+        h = dt / 2.0
 
-        noise_amp_half = self._ou_noise_amplitude(dt / 2.0)
-        decay_half = np.exp(-gamma * dt / 2.0) if gamma > 0 else 1.0
-
-        # (1) Half O-U exact
-        v = v * decay_half
-        if noise_amp_half > 0:
-            v = v + noise_amp_half * self._rng.standard_normal(v.shape)
+        # (1) Half O-U: thermo
+        v = self._thermo.ou_step(v, h, self._rng)
 
         # (2) Half drift
-        x_half = x + (dt / 2.0) * v
+        x_half = x + h * v
 
-        # (3) Force at midpoint: gradient + injection
-        force = self._compute_gradient(x_half)
-        if self.injection_func is not None:
-            t_mid = self._time + dt / 2.0
-            I_vec = np.asarray(self.injection_func(x_half, v, t_mid))
-            force = force + I_vec
+        # (3) Force at midpoint
+        t_mid = self._time + h
+        force = self._total_force(x_half, v, t_mid)
 
-        # (4)-(6) Half kick → rotation → half kick
-        v_minus = v + (dt / 2.0) * force
-        v_rot = self._exact_rotate(v_minus, self.omega_coriolis * dt)
-        v_new = v_rot + (dt / 2.0) * force
+        # (4)-(6) Half kick → Gauge rotation → Half kick
+        v_minus = v + h * force
+        v_rot = self._gauge.rotate(v_minus, dt)
+        v_new = v_rot + h * force
 
         # (7) Half drift
-        x_new = x_half + (dt / 2.0) * v_new
+        x_new = x_half + h * v_new
 
-        # (8) Half O-U exact
-        v_new = v_new * decay_half
-        if noise_amp_half > 0:
-            v_new = v_new + noise_amp_half * self._rng.standard_normal(v_new.shape)
+        # (8) Half O-U: thermo
+        v_new = self._thermo.ou_step(v_new, h, self._rng)
 
         return x_new, v_new
 
-    def _ou_noise_amplitude(self, h):
-        """O-U exact noise coefficient for time step h.
+    def _euler_step(self, x, v):
+        """Semi-implicit Euler + O-U (하위 호환 fallback)
 
-        dv = -γv dt + σ dW  →  v(t+h) = e^{-γh} v(t) + amp · ξ
-
-        amp = σ √((1 - e^{-2γh}) / (2γ))
-        γ→0 limit: amp = σ √h
+        a = Σ F_i(x, v, t)
+        v_new = Thermo(v + dt·a, dt)
+        x_new = x + dt·v_new
         """
-        if self.noise_sigma <= 0:
-            return 0.0
-        if self.gamma > 0:
-            return self.noise_sigma * np.sqrt(
-                (1.0 - np.exp(-2.0 * self.gamma * h)) / (2.0 * self.gamma)
-            )
-        return self.noise_sigma * np.sqrt(h)
+        dt = self.dt
+        a = self._total_force(x, v, self._time)
 
-    def _exact_rotate(self, v, theta):
-        """회전 평면 (i,j) 에서 v를 각도 θ 만큼 정확히 회전
+        v_tmp = v + dt * a
 
-        exp(θJ) v   where J[i,j]=-1, J[j,i]=1
-        나머지 차원 불변. |v| 정확 보존.
+        decay = np.exp(-self.gamma * dt) if self.gamma > 0 else 1.0
+        v_new = v_tmp * decay
+
+        sigma = self.noise_sigma
+        if sigma > 0:
+            if self.gamma > 0:
+                amp = sigma * np.sqrt((1.0 - np.exp(-2.0 * self.gamma * dt)) / (2.0 * self.gamma))
+            else:
+                amp = sigma * np.sqrt(dt)
+            v_new = v_new + amp * self._rng.standard_normal(v_new.shape)
+
+        x_new = x + dt * v_new
+        return x_new, v_new
+
+    # ------------------------------------------------------------------ #
+    #  힘 합산
+    # ------------------------------------------------------------------ #
+    def _total_force(self, x: np.ndarray, v: np.ndarray, t: float) -> np.ndarray:
+        """모든 Force Layer의 힘을 합산."""
+        f = np.zeros_like(x)
+        for layer in self._force_layers:
+            f = f + layer.force(x, v, t)
+        return f
+
+    def _total_potential(self, x: np.ndarray) -> float:
+        """모든 Force Layer의 퍼텐셜을 합산."""
+        V = 0.0
+        for layer in self._force_layers:
+            V += layer.potential(x)
+        return V
+
+    def _injection_power(self, x: np.ndarray, v: np.ndarray) -> float:
+        """주입 파워: Σ v·I_i (InjectionForce만)"""
+        power = 0.0
+        for layer in self._force_layers:
+            if isinstance(layer, InjectionForce):
+                I_vec = layer.force(x, v, self._time)
+                power += float(np.dot(v, I_vec))
+        return power
+
+    # ------------------------------------------------------------------ #
+    #  극한 일관성 체크
+    # ------------------------------------------------------------------ #
+    def check_limits(self, state: GlobalState = None) -> list:
+        """극한 일관성 체크 실행.
+
+        state 없으면 정적 체크만 (skew, fdt).
+        state 있으면 차원 + 보존계 체크도 포함.
         """
-        v_rot = v.copy()
-        i, j = self.rotation_axis
-        c, s = np.cos(theta), np.sin(theta)
-        vi, vj = v[i], v[j]
-        v_rot[i] = c * vi - s * vj
-        v_rot[j] = s * vi + c * vj
-        return v_rot
+        return TrunkChecker.run_all(self, state)
 
     # ------------------------------------------------------------------ #
-    #  필드 계산
-    # ------------------------------------------------------------------ #
-    def _compute_gradient(self, x):
-        """순수 gradient 계산: g(x) = -∇V(x)"""
-        if self.field_func is not None:
-            return self.field_func(x)
-        grad = np.zeros_like(x)
-        for i in range(len(x)):
-            x_plus = x.copy()
-            x_plus[i] += self.epsilon
-            x_minus = x.copy()
-            x_minus[i] -= self.epsilon
-            grad[i] = (self.potential_func(x_plus) - self.potential_func(x_minus)) / (2 * self.epsilon)
-        return -grad
-
-    def _compute_acceleration(self, x, v):
-        """전체 가속도: gradient + 회전 항 (symplectic Euler용)"""
-        g = self._compute_gradient(x)
-        if self.rotational_func is not None:
-            try:
-                r = self.rotational_func(x, v)
-            except TypeError:
-                r = self.rotational_func(x)
-            if len(g) != len(r):
-                raise ValueError(
-                    f"field and rotational dimension mismatch: {len(g)} vs {len(r)}"
-                )
-            g = g + r
-        return g
-
-    # ------------------------------------------------------------------ #
-    #  유틸리티
+    #  유틸리티 (하위 호환)
     # ------------------------------------------------------------------ #
     def get_energy(self, state: GlobalState) -> float:
         return state.energy
@@ -395,6 +426,9 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             "mass": self.mass,
             "has_injection": self.injection_func is not None,
             "time": self._time,
+            "n_force_layers": len(self._force_layers),
+            "gauge_type": type(self._gauge).__name__,
+            "thermo_type": type(self._thermo).__name__,
         }
 
     def reset(self):
