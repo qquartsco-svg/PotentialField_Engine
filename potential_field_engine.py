@@ -3,7 +3,7 @@
 퍼텐셜 필드 엔진: 퍼텐셜 필드를 계산하고 상태를 업데이트합니다.
 
 수식 (일반):
-  ẍ = -∇V(x) + ωJv - γv + I(x,v,t) + σξ(t)
+  m ẍ = -∇V(x) + ωJv - γv + I(x,v,t) + σξ(t)
 
   각 항의 역할:
     -∇V(x)   : 퍼텐셜 gradient (보존력)
@@ -11,6 +11,11 @@
     -γv       : 감쇠 (에너지 소산, γ>0 → 망각/피로)
     I(x,v,t)  : 외부 주입 (에너지 공급, 자극/각성)
     σξ(t)     : 확률적 요동 (Langevin noise, 비결정론적 전이)
+
+  요동-소산 정리 (Fluctuation-Dissipation Theorem):
+    σ² = 2γkT/m  (kB=1 자연단위)
+    temperature 설정 시 σ가 γ, T, m으로부터 자동 결정.
+    정상 분포: P(x,v) ∝ exp(-E/T),  E = ½m||v||² + V(x)
 
   에너지 밸런스 (결정론 부분):
     E = ½||v||² + V(x)
@@ -87,6 +92,8 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         gamma: float = 0.0,
         injection_func: Optional[Callable] = None,
         noise_sigma: float = 0.0,
+        temperature: Optional[float] = None,
+        mass: float = 1.0,
         noise_seed: Optional[int] = None,
         dt: float = None,
         epsilon: float = None,
@@ -99,17 +106,14 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             rotational_func: 범용 회전 항 (fallback, symplectic Euler에서만 사용)
             omega_coriolis: 코리올리 각속도 ω (설정 시 Strang splitting 사용)
             rotation_axis: 회전 평면 축 인덱스 (기본 (0,1) = xy)
-            gamma: 감쇠 계수 γ ≥ 0. 운동 방정식에 -γv 항 추가.
-                   γ=0이면 감쇠 없음 (기존 동작). γ>0이면 에너지 소산.
-                   정확해 exp(-γt) 적용 (수치적으로 무조건 안정).
-            injection_func: 외부 입력 I(x, v, t) -> np.ndarray.
-                   상태 공간과 같은 차원의 힘 벡터 반환.
-                   None이면 외부 입력 없음.
-            noise_sigma: 요동 세기 σ ≥ 0. σξ(t) 항 추가 (Langevin noise).
-                   σ=0이면 결정론적 (기존 동작). σ>0이면 확률적 전이 가능.
-                   Wiener increment: σ·√dt·N(0,1) 스케일링.
-            noise_seed: 난수 시드. None이면 비결정적 (매 실행 다름).
-                   정수 설정 시 재현 가능한 결과.
+            gamma: 감쇠 계수 γ ≥ 0. -γv 항 추가.
+            injection_func: 외부 입력 I(x, v, t) -> np.ndarray. None이면 없음.
+            noise_sigma: 직접 지정 노이즈 세기 σ. 0보다 크면 FDT 무시.
+            temperature: 시스템 온도 T (kB=1). 설정 시 FDT로 σ 자동 계산.
+                   σ² = 2γT/m. γ=0이면 σ=0 (FDT 요구).
+                   noise_sigma와 동시 사용 시 noise_sigma가 우선 (override).
+            mass: 입자 질량 m > 0. FDT 계산에 사용. 기본 1.0.
+            noise_seed: 난수 시드. None이면 비결정적.
             dt: 시간 스텝
             epsilon: 수치 기울기용 ε
             enable_logging: 로깅
@@ -121,7 +125,9 @@ class PotentialFieldEngine(SelfOrganizingEngine):
         self.rotation_axis = rotation_axis
         self.gamma = float(gamma)
         self.injection_func = injection_func
-        self.noise_sigma = float(noise_sigma)
+        self._noise_sigma_override = float(noise_sigma)
+        self.temperature = temperature
+        self.mass = float(mass)
         self._rng = np.random.default_rng(noise_seed)
         self.dt = dt if dt is not None else DT
         self.epsilon = epsilon if epsilon is not None else EPSILON
@@ -132,6 +138,32 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             self.logger = logging.getLogger("PotentialFieldEngine")
         else:
             self.logger = None
+
+    @property
+    def noise_sigma(self) -> float:
+        """Effective σ.
+
+        우선순위:
+          1) noise_sigma > 0 (직접 지정, override) → 그대로 사용
+          2) temperature 설정 + γ > 0 → FDT: σ = √(2γT/m)
+          3) 그 외 → 0 (결정론적)
+        """
+        if self._noise_sigma_override > 0:
+            return self._noise_sigma_override
+        if self.temperature is not None and self.temperature > 0 and self.gamma > 0:
+            return float(np.sqrt(
+                2.0 * self.gamma * self.temperature / self.mass
+            ))
+        return 0.0
+
+    @property
+    def noise_mode(self) -> str:
+        """현재 노이즈 모드."""
+        if self._noise_sigma_override > 0:
+            return "manual"
+        if self.temperature is not None and self.temperature > 0 and self.gamma > 0:
+            return "fdt"
+        return "off"
 
     # ------------------------------------------------------------------ #
     #  update
@@ -183,6 +215,9 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             "time": float(self._time),
             "gamma": float(self.gamma),
             "noise_sigma": float(self.noise_sigma),
+            "noise_mode": self.noise_mode,
+            "temperature": self.temperature,
+            "mass": self.mass,
             "dissipation_power": float(dissipation_power),
             "injection_power": float(injection_power),
         })
@@ -355,6 +390,9 @@ class PotentialFieldEngine(SelfOrganizingEngine):
             "omega_coriolis": self.omega_coriolis,
             "gamma": self.gamma,
             "noise_sigma": self.noise_sigma,
+            "noise_mode": self.noise_mode,
+            "temperature": self.temperature,
+            "mass": self.mass,
             "has_injection": self.injection_func is not None,
             "time": self._time,
         }
